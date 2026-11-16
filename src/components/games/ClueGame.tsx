@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Clock, Eye, HelpCircle, RotateCcw } from 'lucide-react';
 import { CATEGORY_LABELS, getClueCards } from '../../data/tikCurriculum';
+import { useRoomSync } from '../../hooks/useRoomSync';
 import type {
   AnswerDetail,
   QuestionCategory,
@@ -9,6 +10,7 @@ import type {
   UserAccount,
 } from '../../types';
 import { soundFx } from '../../utils/sound';
+import { LiveRoomStandings } from '../LiveRoomStandings';
 
 interface ClueGameProps {
   user: UserAccount;
@@ -41,6 +43,8 @@ export const ClueGame: React.FC<ClueGameProps> = ({
   const [phase, setPhase] = useState<'playing' | 'summary'>('playing');
   const [saving, setSaving] = useState(false);
 
+  const { peers, sendProgress } = useRoomSync({ roomCode, user });
+
   const card = cards[cardIdx];
 
   useEffect(() => {
@@ -58,11 +62,18 @@ export const ClueGame: React.FC<ClueGameProps> = ({
           responseTimeMs: CARD_TIME_SEC * 1000,
         },
       ]);
+      sendProgress({
+        progress: Math.round(((cardIdx + 1) / cards.length) * 100),
+        score,
+        streak: 0,
+        statusEffect: cardIdx + 1 >= cards.length ? 'finished' : 'normal',
+        finishedAt: cardIdx + 1 >= cards.length ? Date.now() : undefined,
+      });
       return;
     }
     const timer = window.setTimeout(() => setTimeLeft((t) => t - 1), 1000);
     return () => window.clearTimeout(timer);
-  }, [phase, cardResult, timeLeft, card]);
+  }, [phase, cardResult, timeLeft, card, cardIdx, cards.length, score, sendProgress]);
 
   function revealNextClue() {
     if (revealedClues < 3 && cardResult === 'pending') {
@@ -81,7 +92,9 @@ export const ClueGame: React.FC<ClueGameProps> = ({
       soundFx.correct();
       const basePoints = revealedClues === 1 ? 200 : revealedClues === 2 ? 150 : 100;
       const timeBonus = Math.round(timeLeft * 2);
-      setScore((s) => s + basePoints + timeBonus);
+      const nextScore = score + basePoints + timeBonus;
+      const nextCorrect = answers.filter((a) => a.isCorrect).length + 1;
+      setScore(nextScore);
       setCardResult('correct');
       setWrongMsg('');
       setAnswers((prev) => [
@@ -94,6 +107,13 @@ export const ClueGame: React.FC<ClueGameProps> = ({
           responseTimeMs: (CARD_TIME_SEC - timeLeft) * 1000,
         },
       ]);
+      sendProgress({
+        progress: Math.round(((cardIdx + 1) / cards.length) * 100),
+        score: nextScore,
+        streak: nextCorrect,
+        statusEffect: cardIdx + 1 >= cards.length ? 'finished' : 'normal',
+        finishedAt: cardIdx + 1 >= cards.length ? Date.now() : undefined,
+      });
     } else {
       soundFx.wrong();
       setWrongMsg('Belum tepat. Coba periksa ejaan atau buka petunjuk berikutnya.');
@@ -164,6 +184,7 @@ export const ClueGame: React.FC<ClueGameProps> = ({
     setScore(0);
     setAnswers([]);
     setPhase('playing');
+    sendProgress({ progress: 0, score: 0, streak: 0, statusEffect: 'normal' });
   }
 
   const hintPattern = card.answer
@@ -186,6 +207,8 @@ export const ClueGame: React.FC<ClueGameProps> = ({
           <span>Game D · {CATEGORY_LABELS[category]}</span>
           <span aria-hidden="true">·</span>
           <span>Kartu {cardIdx + 1}/{cards.length}</span>
+          <span aria-hidden="true">·</span>
+          <span>{roomCode ? `Live Room ${roomCode.toUpperCase()}` : mode === 'live' ? 'Live Kelas' : 'Mode Mandiri'}</span>
         </div>
       </div>
 
@@ -340,6 +363,8 @@ export const ClueGame: React.FC<ClueGameProps> = ({
           </div>
         </div>
       )}
+
+      <LiveRoomStandings roomCode={roomCode} peers={peers} currentUserId={user.id} />
     </div>
   );
 };

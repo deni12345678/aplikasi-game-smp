@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowRight, Award, CheckCircle2, KeyRound, Lock, PlayCircle, User } from 'lucide-react';
+import { ArrowRight, Award, CheckCircle2, KeyRound, Lock, PlayCircle, Plus, User } from 'lucide-react';
 import { AVATAR_CHOICES, CATEGORY_LABELS, computeStudentBadges, GAME_META } from '../data/tikCurriculum';
 import type {
   GameSession,
@@ -35,19 +35,39 @@ export const StudentHub: React.FC<StudentHubProps> = ({
   const [myScores, setMyScores] = useState<ScoreRecord[]>([]);
   const [savingAvatar, setSavingAvatar] = useState(false);
 
+  // Quick classroom room creator for teachers
+  const [quickTitle, setQuickTitle] = useState('');
+  const [quickGameType, setQuickGameType] = useState<GameType>('quiz');
+  const [quickCategory, setQuickCategory] = useState<QuestionCategory>('tik');
+  const [creatingRoom, setCreatingRoom] = useState(false);
+
   useEffect(() => {
-    fetch('/api/sessions')
-      .then((r) => r.json())
-      .then((d) => setSessions(d.sessions || []))
-      .catch(() => {});
+    let active = true;
+    const loadSessions = () => {
+      fetch('/api/sessions')
+        .then((r) => r.json())
+        .then((d) => {
+          if (active) setSessions(d.sessions || []);
+        })
+        .catch(() => {});
+    };
+
+    loadSessions();
+    const timer = window.setInterval(loadSessions, 4000);
 
     fetch('/api/analytics')
       .then((r) => r.json())
       .then((d) => {
+        if (!active) return;
         const list = (d.recentScores || []) as ScoreRecord[];
         setMyScores(list.filter((s) => s.studentId === user.id || s.studentName === user.fullName));
       })
       .catch(() => {});
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, [user.id, user.fullName]);
 
   async function handleRoomJoin(e: React.FormEvent) {
@@ -92,10 +112,96 @@ export const StudentHub: React.FC<StudentHubProps> = ({
     }
   }
 
+  async function handleQuickCreateRoom(e: React.FormEvent) {
+    e.preventDefault();
+    setCreatingRoom(true);
+    try {
+      const res = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: quickTitle.trim() || `Kelas Bersama: ${GAME_META[quickGameType].title}`,
+          gameType: quickGameType,
+          mode: 'live',
+          category: quickCategory,
+          targetClass: 'Semua Kelas',
+          createdBy: user.fullName,
+          startInLobby: true,
+        }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { session: GameSession };
+        soundFx.correct();
+        setQuickTitle('');
+        if (onEnterLobby) {
+          onEnterLobby(data.session.code);
+        } else {
+          onJoinSession(
+            data.session.gameType,
+            data.session.mode,
+            data.session.code,
+            data.session.category || 'tik'
+          );
+        }
+      }
+    } finally {
+      setCreatingRoom(false);
+    }
+  }
+
   const badges = computeStudentBadges(myScores);
 
   return (
     <div className="space-y-8">
+      {user.role === 'teacher' && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-6">
+          <p className="text-xs font-semibold text-emerald-700">
+            Kontrol Host Guru · Semua 6 Game Siap Dimainkan Bersama
+          </p>
+          <h2 className="mt-1 text-lg font-bold text-slate-900">
+            Buat Room Kelas & Buka Ruang Tunggu (Lobby)
+          </h2>
+          <form onSubmit={handleQuickCreateRoom} className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-12">
+            <input
+              type="text"
+              value={quickTitle}
+              onChange={(e) => setQuickTitle(e.target.value)}
+              placeholder="Judul Sesi (opsional, cth: Main Bersama TIK Kelas VII)"
+              className="rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-emerald-700 md:col-span-5"
+            />
+            <select
+              value={quickGameType}
+              onChange={(e) => setQuickGameType(e.target.value as GameType)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-emerald-700 md:col-span-3"
+            >
+              <option value="quiz">A. Quiz Interaktif</option>
+              <option value="flag">B. Tebak Bendera Dunia</option>
+              <option value="matching">C. Game Balasan (Matching)</option>
+              <option value="clue">D. Game Tebak Clue</option>
+              <option value="puzzle">E. Teka-Teki & Logika</option>
+              <option value="racing">F. Code Racer 2D</option>
+            </select>
+            <select
+              value={quickCategory}
+              onChange={(e) => setQuickCategory(e.target.value as QuestionCategory)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-emerald-700 md:col-span-2"
+            >
+              <option value="tik">TIK</option>
+              <option value="umum">Umum</option>
+              <option value="campuran">Campuran</option>
+            </select>
+            <button
+              type="submit"
+              disabled={creatingRoom}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 disabled:opacity-60 md:col-span-2 whitespace-nowrap"
+            >
+              <Plus className="h-4 w-4" />
+              {creatingRoom ? 'Membuat...' : 'Buka Lobby'}
+            </button>
+          </form>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Gabung Room Live */}
         <div className="rounded-xl border border-slate-200 bg-white p-6 lg:col-span-6">
@@ -248,7 +354,7 @@ export const StudentHub: React.FC<StudentHubProps> = ({
           {sessions.map((sess) => (
             <div
               key={sess.code}
-              className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 p-4"
+              className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-slate-200 p-4"
             >
               <div>
                 <p className="text-xs text-slate-500">
@@ -259,25 +365,36 @@ export const StudentHub: React.FC<StudentHubProps> = ({
                     : sess.status === 'finished'
                     ? 'Selesai'
                     : 'Aktif'}{' '}
-                  · {CATEGORY_LABELS[sess.category || 'tik']}
+                  · {CATEGORY_LABELS[sess.category || 'tik']} · {sess.participants.length} peserta
                 </p>
                 <p className="mt-1 text-sm font-bold text-slate-900">{sess.title}</p>
                 <p className="mt-0.5 text-xs text-slate-600">{GAME_META[sess.gameType].title}</p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (sess.status === 'waiting' && onEnterLobby) {
-                    onEnterLobby(sess.code);
-                  } else {
-                    onJoinSession(sess.gameType, sess.mode, sess.code, sess.category || 'tik');
-                  }
-                }}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
-              >
-                <PlayCircle className="h-4 w-4" />
-                {sess.status === 'waiting' ? 'Masuk Lobby' : 'Ikuti'}
-              </button>
+              <div className="flex items-center gap-2">
+                {onEnterLobby && (sess.status === 'waiting' || user.role === 'teacher') && (
+                  <button
+                    type="button"
+                    onClick={() => onEnterLobby(sess.code)}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Lobby
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (sess.status === 'waiting' && onEnterLobby) {
+                      onEnterLobby(sess.code);
+                    } else {
+                      onJoinSession(sess.gameType, sess.mode, sess.code, sess.category || 'tik');
+                    }
+                  }}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+                >
+                  <PlayCircle className="h-4 w-4" />
+                  {sess.status === 'waiting' ? 'Masuk Lobby' : 'Main Bersama'}
+                </button>
+              </div>
             </div>
           ))}
         </div>

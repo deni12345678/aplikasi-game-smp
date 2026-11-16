@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Copy, Check, Play, Radio, Users } from 'lucide-react';
+import { ArrowLeft, Check, Copy, Play, Radio, RotateCcw, Users } from 'lucide-react';
 import { AVATAR_CHOICES, CATEGORY_LABELS, GAME_META } from '../data/tikCurriculum';
-import type { GameSession, UserAccount } from '../types';
+import type { GameSession, GameType, QuestionCategory, UserAccount } from '../types';
 import { soundFx } from '../utils/sound';
 
 interface LobbyRoomProps {
@@ -11,6 +11,8 @@ interface LobbyRoomProps {
   onSessionStarted: (session: GameSession) => void;
   onUserUpdate?: (updated: UserAccount) => void;
 }
+
+const ALL_GAMES: GameType[] = ['quiz', 'flag', 'matching', 'clue', 'puzzle', 'racing'];
 
 export const LobbyRoom: React.FC<LobbyRoomProps> = ({
   roomCode,
@@ -25,12 +27,17 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
   const [copied, setCopied] = useState(false);
   const [savingAvatar, setSavingAvatar] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [updatingGame, setUpdatingGame] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const launchedRef = useRef(false);
+  const prevStatusRef = useRef<'waiting' | 'active' | 'finished' | null>(null);
 
   useEffect(() => {
     let active = true;
+    launchedRef.current = false;
+    prevStatusRef.current = null;
+
     fetch(`/api/sessions/${roomCode.toUpperCase()}`)
       .then(async (res) => {
         if (!res.ok) throw new Error('Kode room tidak ditemukan.');
@@ -39,8 +46,9 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
       .then((data) => {
         if (!active) return;
         setSession(data.session);
+        prevStatusRef.current = data.session.status;
         setLoading(false);
-        if (data.session.status === 'active' && !launchedRef.current) {
+        if (user.role !== 'teacher' && data.session.status === 'active' && !launchedRef.current) {
           launchedRef.current = true;
           onSessionStarted(data.session);
         }
@@ -54,7 +62,7 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
     return () => {
       active = false;
     };
-  }, [roomCode, onSessionStarted]);
+  }, [roomCode, user.role, onSessionStarted]);
 
   useEffect(() => {
     const codeUpper = roomCode.toUpperCase();
@@ -72,15 +80,23 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
     };
 
     const applySessionState = (sess: GameSession) => {
+      const prevStatus = prevStatusRef.current;
+      prevStatusRef.current = sess.status;
       setSession(sess);
-      if (sess.status === 'active' && !launchedRef.current) {
+
+      // Students enter automatically when room is active.
+      // Teachers stay in lobby if room was already active on arrival, and auto-enter when transitioning from waiting -> active.
+      const shouldTeacherLaunch =
+        user.role === 'teacher' && (prevStatus === 'waiting' || starting) && sess.status === 'active';
+      const shouldStudentLaunch = user.role !== 'teacher' && sess.status === 'active';
+
+      if ((shouldTeacherLaunch || shouldStudentLaunch) && !launchedRef.current) {
         launchedRef.current = true;
         soundFx.nitro();
         onSessionStarted(sess);
       }
     };
 
-    // Ensure participant registration via REST too (serverless-safe)
     fetch(`/api/sessions/${codeUpper}/join`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -129,7 +145,6 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
       wsConnected = false;
     };
 
-    // Lightweight HTTP polling fallback when WS is closed/unavailable (Vercel Serverless)
     const pollTimer = window.setInterval(() => {
       if (wsConnected && ws.readyState === WebSocket.OPEN) return;
       fetch(`/api/sessions/${codeUpper}`)
@@ -145,7 +160,17 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
       ws.close();
       wsRef.current = null;
     };
-  }, [roomCode, user.id, user.fullName, user.className, user.avatarColor, user.avatarIcon, onSessionStarted]);
+  }, [
+    roomCode,
+    user.id,
+    user.fullName,
+    user.className,
+    user.avatarColor,
+    user.avatarIcon,
+    user.role,
+    starting,
+    onSessionStarted,
+  ]);
 
   async function handleSelectAvatar(icon: string) {
     soundFx.click();
@@ -187,22 +212,85 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
     }
   }
 
-  function handleHostStart() {
+  async function handleUpdateGame(nextGameType?: GameType, nextCategory?: QuestionCategory) {
+    if (!session || user.role !== 'teacher') return;
+    soundFx.click();
+    setUpdatingGame(true);
+    const codeUpper = roomCode.toUpperCase();
+    const gameType = nextGameType ?? session.gameType;
+    const category = nextCategory ?? session.category ?? 'tik';
+
+    try {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            event: 'room:update_game',
+            payload: { code: codeUpper, gameType, category },
+          })
+        );
+      }
+      const res = await fetch(`/api/sessions/${codeUpper}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gameType, category }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { session: GameSession };
+        setSession(data.session);
+      }
+    } finally {
+      setUpdatingGame(false);
+    }
+  }
+
+  async function handleResetLobby() {
+    if (!session || user.role !== 'teacher') return;
+    soundFx.click();
+    const codeUpper = roomCode.toUpperCase();
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          event: 'room:reset_lobby',
+          payload: { code: codeUpper },
+        })
+      );
+    }
+    const res = await fetch(`/api/sessions/${codeUpper}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'waiting', resetParticipants: true }),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { session: GameSession };
+      prevStatusRef.current = 'waiting';
+      setSession(data.session);
+    }
+  }
+
+  async function handleHostStart() {
+    if (!session) return;
     soundFx.nitro();
     setStarting(true);
+    const codeUpper = roomCode.toUpperCase();
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(
         JSON.stringify({
           event: 'room:host_start',
-          payload: { code: roomCode.toUpperCase() },
+          payload: { code: codeUpper },
         })
       );
-    } else {
-      fetch(`/api/sessions/${roomCode.toUpperCase()}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'active' }),
-      }).catch(() => {});
+    }
+    const res = await fetch(`/api/sessions/${codeUpper}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'active' }),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { session: GameSession };
+      if (!launchedRef.current) {
+        launchedRef.current = true;
+        onSessionStarted(data.session);
+      }
     }
   }
 
@@ -249,7 +337,7 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
 
         <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700">
           <Radio className="h-4 w-4 animate-pulse" />
-          Sinkronisasi Real-Time Aktif
+          Sinkronisasi Ruang Kelas Real-Time Aktif
         </div>
       </div>
 
@@ -257,7 +345,7 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         <div className="rounded-xl border border-slate-200 bg-white p-6 lg:col-span-8">
           <p className="text-xs font-semibold text-emerald-700">
-            Ruang Tunggu Interaktif · {GAME_META[session.gameType].title}
+            Ruang Tunggu Interaktif · Game {GAME_META[session.gameType].code}: {GAME_META[session.gameType].title}
           </p>
           <h1 className="mt-1 text-2xl font-bold text-slate-900">{session.title}</h1>
           <p className="mt-2 text-sm text-slate-600">
@@ -283,17 +371,33 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
               </div>
             </div>
 
-            <div className="ml-auto">
+            <div className="ml-auto flex flex-wrap items-center gap-2">
               {user.role === 'teacher' ? (
-                <button
-                  type="button"
-                  disabled={starting}
-                  onClick={handleHostStart}
-                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 disabled:opacity-60"
-                >
-                  <Play className="h-4 w-4" />
-                  {starting ? 'Memulai Game...' : 'Mulai Permainan Sekarang (Start Game)'}
-                </button>
+                <>
+                  {session.status !== 'waiting' && (
+                    <button
+                      type="button"
+                      onClick={handleResetLobby}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                      Siapkan Ronde Baru
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={starting}
+                    onClick={handleHostStart}
+                    className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 disabled:opacity-60"
+                  >
+                    <Play className="h-4 w-4" />
+                    {starting
+                      ? 'Memulai Game...'
+                      : session.status === 'active'
+                      ? 'Masuk & Mulai Game Bersama'
+                      : 'Mulai Permainan Sekarang (Start Game)'}
+                  </button>
+                </>
               ) : (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-semibold text-amber-900">
                   {session.status === 'waiting'
@@ -348,6 +452,65 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Game Selector di dalam Room (untuk Guru) */}
+      {user.role === 'teacher' && (
+        <div className="rounded-xl border border-slate-200 bg-white p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">
+                Menu Pilihan Game di Dalam Room (Main Bersama)
+              </h2>
+              <p className="text-xs text-slate-500">
+                Pilih salah satu dari 6 wahana game untuk dimainkan serentak oleh seluruh siswa di room ini.
+              </p>
+            </div>
+            <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
+              {(['tik', 'umum', 'campuran'] as QuestionCategory[]).map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  disabled={updatingGame}
+                  onClick={() => handleUpdateGame(undefined, cat)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap ${
+                    (session.category || 'tik') === cat
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {cat === 'tik' ? 'TIK' : cat === 'umum' ? 'Umum' : 'Campuran'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {ALL_GAMES.map((gType) => {
+              const meta = GAME_META[gType];
+              const isSelected = session.gameType === gType;
+              return (
+                <button
+                  key={gType}
+                  type="button"
+                  disabled={updatingGame}
+                  onClick={() => handleUpdateGame(gType, undefined)}
+                  className={`flex flex-col items-start rounded-lg border p-3.5 text-left transition-colors ${
+                    isSelected
+                      ? 'border-emerald-700 bg-emerald-50 ring-2 ring-emerald-700/15'
+                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="font-mono text-xs font-bold text-emerald-700">
+                    Game {meta.code} · {meta.estimatedMinutes} Menit
+                  </span>
+                  <span className="mt-1 text-sm font-bold text-slate-900">{meta.title}</span>
+                  <span className="mt-1 text-xs text-slate-500 line-clamp-2">{meta.subtitle}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Live Participant Grid */}
       <div className="rounded-xl border border-slate-200 bg-white p-6">

@@ -16,8 +16,10 @@ import {
   Wifi,
 } from 'lucide-react';
 import { MATCHING_LEVELS } from '../../data/tikCurriculum';
+import { useRoomSync } from '../../hooks/useRoomSync';
 import type { AnswerDetail, ScoreRecord, SessionMode, UserAccount } from '../../types';
 import { soundFx } from '../../utils/sound';
+import { LiveRoomStandings } from '../LiveRoomStandings';
 
 interface MatchingGameProps {
   user: UserAccount;
@@ -75,6 +77,8 @@ export const MatchingGame: React.FC<MatchingGameProps> = ({
   const [finalScore, setFinalScore] = useState(0);
   const [saving, setSaving] = useState(false);
 
+  const { peers, sendProgress } = useRoomSync({ roomCode, user });
+
   const level = MATCHING_LEVELS[levelIdx];
 
   const shuffledDefinitions = useMemo(() => {
@@ -100,6 +104,17 @@ export const MatchingGame: React.FC<MatchingGameProps> = ({
 
       if (nextMatched.length === level.pairs.length) {
         completeLevel(nextMatched);
+      } else {
+        const partialPct = Math.round((nextMatched.length / level.pairs.length) * 100);
+        const partialScore = Math.round(
+          (nextMatched.length / level.pairs.length) * Math.max(250, 900 - wrongAttempts * 45)
+        );
+        sendProgress({
+          progress: partialPct,
+          score: partialScore,
+          streak: nextMatched.length,
+          statusEffect: 'normal',
+        });
       }
     } else {
       soundFx.wrong();
@@ -117,6 +132,13 @@ export const MatchingGame: React.FC<MatchingGameProps> = ({
     setFinalScore(computedScore);
     setPhase('summary');
     setSaving(true);
+    sendProgress({
+      progress: 100,
+      score: computedScore,
+      streak: Math.max(1, level.pairs.length - wrongAttempts),
+      statusEffect: 'finished',
+      finishedAt: Date.now(),
+    });
 
     const answers: AnswerDetail[] = level.pairs.map((p) => ({
       questionId: p.id,
@@ -164,6 +186,7 @@ export const MatchingGame: React.FC<MatchingGameProps> = ({
     setFeedback(null);
     setStartTimeMs(Date.now());
     setPhase('playing');
+    sendProgress({ progress: 0, score: 0, streak: 0, statusEffect: 'normal' });
   }
 
   return (
@@ -178,21 +201,26 @@ export const MatchingGame: React.FC<MatchingGameProps> = ({
           Kembali ke Arena
         </button>
 
-        <div className="flex items-center gap-2 rounded-lg bg-slate-100 p-1">
-          {MATCHING_LEVELS.map((lvl, idx) => (
-            <button
-              key={lvl.id}
-              type="button"
-              onClick={() => resetLevel(idx)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
-                levelIdx === idx
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Level {idx + 1}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs font-semibold text-slate-500">
+            {roomCode ? `Live Room ${roomCode.toUpperCase()}` : mode === 'live' ? 'Live Kelas' : 'Mode Mandiri'}
+          </span>
+          <div className="flex items-center gap-2 rounded-lg bg-slate-100 p-1">
+            {MATCHING_LEVELS.map((lvl, idx) => (
+              <button
+                key={lvl.id}
+                type="button"
+                onClick={() => resetLevel(idx)}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
+                  levelIdx === idx
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Level {idx + 1}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -367,6 +395,8 @@ export const MatchingGame: React.FC<MatchingGameProps> = ({
           </div>
         </div>
       )}
+
+      <LiveRoomStandings roomCode={roomCode} peers={peers} currentUserId={user.id} />
     </div>
   );
 };

@@ -3,7 +3,7 @@ import path from 'path';
 import express from 'express';
 import { WebSocket, WebSocketServer } from 'ws';
 import { buildAnalytics, createAppRuntime, saveDatabase } from './server/app';
-import type { GameSession, LiveRaceParticipant, QuestionCategory } from './src/types';
+import type { GameSession, GameType, LiveRaceParticipant, QuestionCategory } from './src/types';
 
 async function startServer() {
   const roomSubscribers = new Map<string, Set<WebSocket>>();
@@ -96,6 +96,9 @@ async function startServer() {
                 statusEffect: payload.statusEffect ?? session.participants[idx].statusEffect,
                 finishedAt: payload.finishedAt ?? session.participants[idx].finishedAt,
               };
+              if (payload.statusEffect === 'finished' || Number(payload.progress) >= 100) {
+                saveDatabase(db);
+              }
               broadcastToRoom(code, 'room:state', session);
               broadcastToDashboard('dashboard:update', buildAnalytics(db));
             }
@@ -129,6 +132,38 @@ async function startServer() {
           const session = db.sessions.find((s) => s.code === code);
           if (session) {
             session.category = payload.category as QuestionCategory;
+            saveDatabase(db);
+            broadcastToRoom(code, 'room:state', session);
+            broadcastToDashboard('dashboard:update', buildAnalytics(db));
+          }
+        }
+
+        if (event === 'room:update_game' && payload?.code) {
+          const code = String(payload.code).toUpperCase();
+          const session = db.sessions.find((s) => s.code === code);
+          if (session) {
+            if (payload.gameType) session.gameType = payload.gameType as GameType;
+            if (payload.category) session.category = payload.category as QuestionCategory;
+            saveDatabase(db);
+            broadcastToRoom(code, 'room:state', session);
+            broadcastToDashboard('dashboard:update', buildAnalytics(db));
+          }
+        }
+
+        if (event === 'room:reset_lobby' && payload?.code) {
+          const code = String(payload.code).toUpperCase();
+          const session = db.sessions.find((s) => s.code === code);
+          if (session) {
+            session.status = 'waiting';
+            session.participants = session.participants.map((p) => ({
+              ...p,
+              progress: 0,
+              speedKmh: 80,
+              score: 0,
+              streak: 0,
+              statusEffect: 'normal',
+              finishedAt: undefined,
+            }));
             saveDatabase(db);
             broadcastToRoom(code, 'room:state', session);
             broadcastToDashboard('dashboard:update', buildAnalytics(db));

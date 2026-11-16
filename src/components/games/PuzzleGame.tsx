@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { ArrowDown, ArrowLeft, ArrowUp, CheckCircle2, RotateCcw } from 'lucide-react';
 import { ALGORITHM_CHALLENGES, CROSSWORD_WORDS } from '../../data/tikCurriculum';
+import { useRoomSync } from '../../hooks/useRoomSync';
 import type { AnswerDetail, ScoreRecord, SessionMode, UserAccount } from '../../types';
 import { soundFx } from '../../utils/sound';
+import { LiveRoomStandings } from '../LiveRoomStandings';
 
 interface PuzzleGameProps {
   user: UserAccount;
@@ -36,6 +38,8 @@ export const PuzzleGame: React.FC<PuzzleGameProps> = ({
   const [saving, setSaving] = useState(false);
   const [savedScore, setSavedScore] = useState<number | null>(null);
 
+  const { peers, sendProgress } = useRoomSync({ roomCode, user });
+
   const cellSolutionMap = useMemo(() => {
     const map = new Map<string, { char: string; numbers: number[] }>();
     for (const w of CROSSWORD_WORDS) {
@@ -53,10 +57,22 @@ export const PuzzleGame: React.FC<PuzzleGameProps> = ({
     return map;
   }, []);
 
+  function syncGridProgress(nextGrid: Record<string, string>) {
+    if (!roomCode || cellSolutionMap.size === 0) return;
+    let filled = 0;
+    cellSolutionMap.forEach((_val, key) => {
+      if (nextGrid[key]) filled += 1;
+    });
+    const pct = Math.min(90, Math.round((filled / cellSolutionMap.size) * 90));
+    sendProgress({ progress: pct, score: savedScore ?? 0, streak: 0, statusEffect: 'normal' });
+  }
+
   function handleCellChange(r: number, c: number, val: string) {
     const clean = val.replace(/[^a-zA-Z]/g, '').slice(-1).toUpperCase();
-    setUserGrid((prev) => ({ ...prev, [`${r}-${c}`]: clean }));
+    const nextGrid = { ...userGrid, [`${r}-${c}`]: clean };
+    setUserGrid(nextGrid);
     setCheckedTts(false);
+    syncGridProgress(nextGrid);
   }
 
   function switchAlgoChallenge(nextIdx: number) {
@@ -75,6 +91,13 @@ export const PuzzleGame: React.FC<PuzzleGameProps> = ({
     [copy[index], copy[target]] = [copy[target], copy[index]];
     setAlgoOrder(copy);
     setAlgoChecked(null);
+    const matched = copy.filter((step, idx) => step === currentAlgo.correctOrder[idx]).length;
+    sendProgress({
+      progress: Math.min(90, Math.round((matched / currentAlgo.correctOrder.length) * 90)),
+      score: matched * 100,
+      streak: matched,
+      statusEffect: 'normal',
+    });
   }
 
   async function submitTtsCheck() {
@@ -110,14 +133,29 @@ export const PuzzleGame: React.FC<PuzzleGameProps> = ({
     }
 
     const totalScore = solvedWords * 115;
+    sendProgress({
+      progress: 100,
+      score: totalScore,
+      streak: solvedWords,
+      statusEffect: 'finished',
+      finishedAt: Date.now(),
+    });
     await persistPuzzleScore(totalScore, solvedWords, CROSSWORD_WORDS.length, answers);
   }
 
   async function submitAlgoCheck() {
-    const isPerfect = algoOrder.every((step, idx) => step === currentAlgo.correctOrder[idx]);
+    const matchedPos = algoOrder.filter((step, idx) => step === currentAlgo.correctOrder[idx]).length;
+    const isPerfect = matchedPos === currentAlgo.correctOrder.length;
     setAlgoChecked(isPerfect);
     if (isPerfect) {
       soundFx.victory();
+      sendProgress({
+        progress: 100,
+        score: 900,
+        streak: 5,
+        statusEffect: 'finished',
+        finishedAt: Date.now(),
+      });
       await persistPuzzleScore(900, 5, 5, [
         {
           questionId: currentAlgo.id,
@@ -129,6 +167,12 @@ export const PuzzleGame: React.FC<PuzzleGameProps> = ({
       ]);
     } else {
       soundFx.wrong();
+      sendProgress({
+        progress: Math.round((matchedPos / currentAlgo.correctOrder.length) * 80),
+        score: matchedPos * 100,
+        streak: matchedPos,
+        statusEffect: 'normal',
+      });
     }
   }
 
@@ -180,8 +224,10 @@ export const PuzzleGame: React.FC<PuzzleGameProps> = ({
       const targetKey = emptyKeys[0];
       const sol = cellSolutionMap.get(targetKey);
       if (sol) {
-        setUserGrid((prev) => ({ ...prev, [targetKey]: sol.char }));
+        const nextGrid = { ...userGrid, [targetKey]: sol.char };
+        setUserGrid(nextGrid);
         setCheckedTts(false);
+        syncGridProgress(nextGrid);
       }
     }
   }
@@ -198,35 +244,40 @@ export const PuzzleGame: React.FC<PuzzleGameProps> = ({
           Kembali ke Arena
         </button>
 
-        <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
-          <button
-            type="button"
-            onClick={() => {
-              soundFx.click();
-              setSubMode('tts');
-            }}
-            className={`rounded-md px-3.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
-              subMode === 'tts'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Teka-Teki Silang TIK
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              soundFx.click();
-              setSubMode('algo');
-            }}
-            className={`rounded-md px-3.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
-              subMode === 'algo'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Puzzle Alur Algoritma
-          </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs font-semibold text-slate-500">
+            {roomCode ? `Live Room ${roomCode.toUpperCase()}` : mode === 'live' ? 'Live Kelas' : 'Mode Mandiri'}
+          </span>
+          <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.click();
+                setSubMode('tts');
+              }}
+              className={`rounded-md px-3.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
+                subMode === 'tts'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Teka-Teki Silang TIK
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.click();
+                setSubMode('algo');
+              }}
+              className={`rounded-md px-3.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
+                subMode === 'algo'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Puzzle Alur Algoritma
+            </button>
+          </div>
         </div>
       </div>
 
@@ -463,6 +514,8 @@ export const PuzzleGame: React.FC<PuzzleGameProps> = ({
           </div>
         </div>
       )}
+
+      <LiveRoomStandings roomCode={roomCode} peers={peers} currentUserId={user.id} />
     </div>
   );
 };

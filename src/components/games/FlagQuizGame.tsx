@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, CheckCircle2, Clock, Flame, Globe2, RotateCcw, Users, XCircle } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Clock, Flame, Globe2, RotateCcw, XCircle } from 'lucide-react';
 import { FLAG_QUESTIONS } from '../../data/tikCurriculum';
 import type {
   AnswerDetail,
@@ -13,6 +13,7 @@ import type {
 } from '../../types';
 import { soundFx } from '../../utils/sound';
 import { FlagGraphic } from '../FlagGraphic';
+import { LiveRoomStandings } from '../LiveRoomStandings';
 
 interface FlagQuizGameProps {
   user: UserAccount;
@@ -477,36 +478,7 @@ export const FlagQuizGame: React.FC<FlagQuizGameProps> = ({
         </div>
       )}
 
-      {roomCode && roomPeers.length > 0 && (
-        <div className="mt-6 rounded-xl border border-slate-200 bg-white p-5">
-          <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700">
-            <Users className="h-4 w-4" />
-            Live Room Leaderboard ({roomCode})
-          </div>
-          <div className="mt-3 space-y-2">
-            {roomPeers
-              .slice()
-              .sort((a, b) => b.score - a.score)
-              .map((p, idx) => (
-                <div
-                  key={p.studentId}
-                  className="flex items-center justify-between border-b border-slate-100 py-2 text-sm last:border-b-0"
-                >
-                  <span className="flex items-center gap-2 font-medium text-slate-800">
-                    <span className="font-mono font-bold text-slate-500">#{idx + 1}</span>
-                    <span>{p.avatarIcon || '🎓'}</span>
-                    <span>
-                      {p.studentName} · {p.className}
-                    </span>
-                  </span>
-                  <span className="font-mono font-bold text-emerald-700 tabular-nums">
-                    {p.score} pts ({p.progress}%)
-                  </span>
-                </div>
-              ))}
-          </div>
-        </div>
-      )}
+      <LiveRoomStandings roomCode={roomCode} peers={roomPeers} currentUserId={user.id} />
 
       {phase === 'summary' && (
         <div className="rounded-xl border border-slate-200 bg-white p-8">

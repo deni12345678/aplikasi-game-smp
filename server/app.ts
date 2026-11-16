@@ -492,12 +492,26 @@ export function createAppRuntime(hooks: RuntimeHooks = {}): {
     if (!session) {
       return res.status(404).json({ error: 'Sesi tidak ditemukan.' });
     }
-    const { status, category } = req.body as {
+    const { status, category, gameType, resetParticipants } = req.body as {
       status?: 'waiting' | 'active' | 'finished';
       category?: QuestionCategory;
+      gameType?: GameType;
+      resetParticipants?: boolean;
     };
     if (status) session.status = status;
     if (category) session.category = category;
+    if (gameType) session.gameType = gameType;
+    if (resetParticipants) {
+      session.participants = session.participants.map((p) => ({
+        ...p,
+        progress: 0,
+        speedKmh: 80,
+        score: 0,
+        streak: 0,
+        statusEffect: 'normal',
+        finishedAt: undefined,
+      }));
+    }
     saveDatabase(db);
     notifyRoom(code, session);
     notifyDashboard();

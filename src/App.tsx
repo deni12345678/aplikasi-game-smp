@@ -83,6 +83,7 @@ export default function App() {
   const [activeLobbyCode, setActiveLobbyCode] = useState<string | null>(null);
 
   const [selectedMode, setSelectedMode] = useState<SessionMode>('homework');
+  const [liveRoomCode, setLiveRoomCode] = useState<string>('TIK701');
   const [selectedCategory, setSelectedCategory] = useState<QuestionCategory>('tik');
   const [muted, setMuted] = useState<boolean>(getSoundMuted());
   const [heroImgFailed, setHeroImgFailed] = useState(false);
@@ -524,9 +525,30 @@ export default function App() {
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      Mode Live (TIK701)
+                      Mode Live ({liveRoomCode.trim().toUpperCase() || 'TIK701'})
                     </button>
                   </div>
+
+                  {selectedMode === 'live' && (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        aria-label="Kode Room Kelas Live"
+                        value={liveRoomCode}
+                        onChange={(e) => setLiveRoomCode(e.target.value.toUpperCase())}
+                        maxLength={8}
+                        placeholder="Kode Room"
+                        className="w-24 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 font-mono text-xs font-bold uppercase text-slate-900 outline-none focus:border-emerald-700"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => openLobby(liveRoomCode.trim() || 'TIK701')}
+                        className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 whitespace-nowrap"
+                      >
+                        Buka Lobby
+                      </button>
+                    </div>
+                  )}
 
                   <button
                     type="button"
@@ -569,13 +591,19 @@ export default function App() {
                             launchGame(
                               type,
                               selectedMode,
-                              selectedMode === 'live' ? 'TIK701' : undefined,
+                              selectedMode === 'live'
+                                ? liveRoomCode.trim().toUpperCase() || 'TIK701'
+                                : undefined,
                               selectedCategory
                             )
                           }
                           className="mt-3 w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700"
                         >
-                          {user ? 'Mainkan Sekarang' : 'Masuk & Mainkan'}
+                          {user
+                            ? selectedMode === 'live'
+                              ? `Main Bersama (${liveRoomCode.trim().toUpperCase() || 'TIK701'})`
+                              : 'Mainkan Sekarang'
+                            : 'Masuk & Mainkan'}
                         </button>
                       </div>
                     </article>
