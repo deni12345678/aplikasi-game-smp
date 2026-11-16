@@ -12,6 +12,7 @@ import type {
   GameSession,
   LiveRaceParticipant,
   QuestionCategory,
+  RacingQuestion,
   ScoreRecord,
   SessionMode,
   UserAccount,
@@ -68,15 +69,18 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
     [user.id, roomCode, sessionMeta?.roundSeed, sessionMeta?.questionMode, playNonce]
   );
   const variantCode = useMemo(() => shortVariantCode(variantSeed), [variantSeed]);
-  const questions = useMemo(
+  const generatedQuestions = useMemo(
     () => getRacingQuestions(category, variantSeed, customQuestions, 25),
     [category, variantSeed, customQuestions]
   );
+  const [activeQuestions, setActiveQuestions] = useState<RacingQuestion[] | null>(null);
+  const questions = phase === 'racing' && activeQuestions ? activeQuestions : generatedQuestions;
   const TOTAL_QUESTIONS = questions.length;
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const photoCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  const answeringRef = useRef(false);
   const animStateRef = useRef({
     targetProgress: 0,
     displayProgress: 0,
@@ -480,9 +484,20 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
 
   function startRace() {
     soundFx.nitro();
+    const nextNonce = phase === 'finished' ? playNonce + 1 : playNonce;
     if (phase === 'finished') {
-      setPlayNonce((n) => n + 1);
+      setPlayNonce(nextNonce);
     }
+    const nextSeed = createVariantSeed(
+      user.id,
+      roomCode,
+      sessionMeta?.roundSeed,
+      sessionMeta?.questionMode || 'varied',
+      nextNonce
+    );
+    const roundQuestions = getRacingQuestions(category, nextSeed, customQuestions, 25);
+    setActiveQuestions(roundQuestions);
+    answeringRef.current = false;
     setPhase('racing');
     setQIndex(0);
     setProgress(0);
@@ -491,17 +506,20 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
     setMaxStreak(0);
     setScore(0);
     setStatusEffect('normal');
-    setFeedbackBanner('Jawab soal TIK dengan cepat untuk mengaktifkan Nitro Boost!');
+    setFeedbackBanner('Jawab 25 soal dengan tepat untuk menggerakkan mobil ke garis finis!');
     setAnswers([]);
     setQStartMs(Date.now());
     broadcastProgress(0, 90, 0, 0, 'normal');
   }
 
   async function handleRaceAnswer(optIdx: number) {
-    if (phase !== 'racing') return;
+    if (phase !== 'racing' || !currentQuestion || answeringRef.current) return;
+    answeringRef.current = true;
+
     const elapsedMs = Date.now() - qStartMs;
     const isCorrect = optIdx === currentQuestion.correctIndex;
-    const stepPct = 100 / TOTAL_QUESTIONS;
+    const prevCorrectCount = answers.filter((a) => a.isCorrect).length;
+    const nextCorrectCount = prevCorrectCount + (isCorrect ? 1 : 0);
 
     let nextProgress = progress;
     let nextSpeed = speedKmh;
@@ -514,27 +532,32 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
       setMaxStreak((m) => Math.max(m, nextStreak));
       const fastBonus = elapsedMs < 4000 ? 40 : 15;
       nextScore = score + 100 + fastBonus + (nextStreak >= 2 ? 30 : 0);
-      nextProgress = Math.min(100, Math.round((qIndex + 1) * stepPct));
+      nextProgress = Math.min(100, Math.round((nextCorrectCount / TOTAL_QUESTIONS) * 100));
 
       if (nextStreak >= 2) {
         soundFx.nitro();
         nextEffect = 'nitro';
         nextSpeed = Math.min(230, 145 + nextStreak * 15);
-        setFeedbackBanner(`NITRO BOOST ${nextStreak}x! Mobil melesat ${nextSpeed} km/h!`);
+        setFeedbackBanner(
+          `NITRO BOOST ${nextStreak}x! Jawaban benar — mobil melesat ${nextSpeed} km/h!`
+        );
       } else {
         soundFx.correct();
         nextEffect = 'normal';
         nextSpeed = 135;
-        setFeedbackBanner('Tepat! Mobil melaju kencang ke depan.');
+        setFeedbackBanner('Tepat! Mobil melaju maju menuju garis finis.');
       }
     } else {
       soundFx.wrong();
       nextStreak = 0;
       nextEffect = 'skid';
-      nextSpeed = 48;
-      // Still advance question, smaller progress gain so race concludes cleanly
-      nextProgress = Math.min(95, progress + Math.round(stepPct * 0.35));
-      setFeedbackBanner('Melambat! Jawaban kurang tepat — kecepatan turun sementara.');
+      nextSpeed = 45;
+      // Car only moves forward on validated correct answers
+      nextProgress = progress;
+      const correctOptionText = currentQuestion.options[currentQuestion.correctIndex] || '';
+      setFeedbackBanner(
+        `Kurang tepat! Jawaban benar: "${correctOptionText}" — mobil tertahan.`
+      );
     }
 
     const answerDetail: AnswerDetail = {
@@ -554,15 +577,15 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
 
     const isLast = qIndex + 1 >= TOTAL_QUESTIONS;
     if (isLast) {
-      const finalProgress = 100;
-      setProgress(finalProgress);
       setStatusEffect('finished');
-      broadcastProgress(finalProgress, nextSpeed, nextScore, nextStreak, 'finished');
+      broadcastProgress(nextProgress, nextSpeed, nextScore, nextStreak, 'finished');
       await finishRace(nextScore, nextAnswers, Math.max(maxStreak, nextStreak));
+      answeringRef.current = false;
     } else {
       broadcastProgress(nextProgress, nextSpeed, nextScore, nextStreak, nextEffect);
       setQIndex((i) => i + 1);
       setQStartMs(Date.now());
+      answeringRef.current = false;
     }
   }
 
@@ -701,12 +724,17 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
         </div>
       )}
 
-      {phase === 'racing' && (
+      {phase === 'racing' && currentQuestion && (
         <div className="rounded-xl border border-slate-200 bg-white p-6 sm:p-8">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
-            <span className="font-mono text-xs font-bold text-slate-500 tabular-nums">
-              Tantangan {qIndex + 1} / {TOTAL_QUESTIONS} · {currentQuestion.topic}
-            </span>
+            <div className="flex items-center gap-3 font-mono text-xs font-bold tabular-nums">
+              <span className="text-slate-600">
+                Tantangan {qIndex + 1} / {TOTAL_QUESTIONS} · {currentQuestion.topic}
+              </span>
+              <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-emerald-700">
+                Benar: {answers.filter((a) => a.isCorrect).length}/{answers.length}
+              </span>
+            </div>
             {feedbackBanner && (
               <span
                 className={`text-xs font-semibold ${
@@ -729,7 +757,7 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
           <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
             {currentQuestion.options.map((opt, idx) => (
               <button
-                key={idx}
+                key={`${currentQuestion.id}-${idx}`}
                 type="button"
                 onClick={() => handleRaceAnswer(idx)}
                 className="flex min-h-[54px] items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-left text-sm font-medium text-slate-800 transition-colors hover:border-emerald-700 hover:bg-emerald-50/40 active:scale-[0.99]"
@@ -748,7 +776,9 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
         <div className="rounded-xl border border-slate-200 bg-white p-8">
           <div className="flex items-center gap-2 text-amber-600">
             <Trophy className="h-5 w-5" />
-            <span className="text-xs font-semibold">Garis Finis Tercapai</span>
+            <span className="text-xs font-semibold">
+              {progress >= 100 ? 'Garis Finis Tercapai!' : '25 Tantangan Balapan Selesai'}
+            </span>
           </div>
           <h2 className="mt-1 text-2xl font-bold text-slate-900">
             Balapan Selesai — {user.fullName}
@@ -779,9 +809,9 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
               </p>
             </div>
             <div>
-              <p className="text-xs text-slate-500">Kecepatan Finis</p>
+              <p className="text-xs text-slate-500">Jarak Lintasan</p>
               <p className="mt-1 font-mono text-2xl font-bold text-slate-900 tabular-nums">
-                {speedKmh} km/h
+                {progress}%
               </p>
             </div>
           </div>

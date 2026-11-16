@@ -1283,11 +1283,21 @@ export function getRacingQuestions(
     pool = [...extraTik, ...RACING_QUESTIONS];
   }
 
+  const seenIds = new Set<string>();
+  const seenPrompts = new Set<string>();
+  const uniquePool = pool.filter((q) => {
+    const key = q.question.trim().toLowerCase();
+    if (seenIds.has(q.id) || seenPrompts.has(key)) return false;
+    seenIds.add(q.id);
+    seenPrompts.add(key);
+    return true;
+  });
+
   if (!seed) {
-    return pool.slice(0, limit);
+    return uniquePool.slice(0, Math.min(limit, uniquePool.length));
   }
-  return shuffleWithSeed(pool, seed)
-    .slice(0, Math.min(limit, pool.length))
+  return shuffleWithSeed(uniquePool, seed)
+    .slice(0, Math.min(limit, uniquePool.length))
     .map((q) => shuffleMcqOptions(q, seed));
 }
 
