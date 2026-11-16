@@ -70,31 +70,47 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
     animStateRef.current.peers = roomParticipants.filter((p) => p.studentId !== user.id);
   }, [progress, speedKmh, statusEffect, roomParticipants, user.id]);
 
-  // Connect WebSocket if playing in a Live Room
+  // Connect WebSocket (with REST/polling fallback for serverless environments like Vercel)
   useEffect(() => {
     if (!roomCode) return;
+    const codeUpper = roomCode.toUpperCase();
+    const participantPayload = {
+      studentId: user.id,
+      studentName: user.fullName,
+      className: user.className,
+      carColor: user.avatarColor,
+      avatarIcon: user.avatarIcon || '🎓',
+      progress: 0,
+      speedKmh: 80,
+      score: 0,
+      streak: 0,
+      statusEffect: 'normal' as const,
+    };
+
+    fetch(`/api/sessions/${codeUpper}/join`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ participant: participantPayload }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.session?.participants) setRoomParticipants(data.session.participants);
+      })
+      .catch(() => {});
+
+    let wsConnected = false;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
     wsRef.current = ws;
 
     ws.onopen = () => {
+      wsConnected = true;
       ws.send(
         JSON.stringify({
           event: 'room:join',
           payload: {
-            code: roomCode,
-            participant: {
-              studentId: user.id,
-              studentName: user.fullName,
-              className: user.className,
-              carColor: user.avatarColor,
-              avatarIcon: user.avatarIcon || '🎓',
-              progress: 0,
-              speedKmh: 80,
-              score: 0,
-              streak: 0,
-              statusEffect: 'normal',
-            },
+            code: codeUpper,
+            participant: participantPayload,
           },
         })
       );
@@ -111,7 +127,25 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
       }
     };
 
+    ws.onerror = () => {
+      wsConnected = false;
+    };
+    ws.onclose = () => {
+      wsConnected = false;
+    };
+
+    const pollTimer = window.setInterval(() => {
+      if (wsConnected && ws.readyState === WebSocket.OPEN) return;
+      fetch(`/api/sessions/${codeUpper}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.session?.participants) setRoomParticipants(data.session.participants);
+        })
+        .catch(() => {});
+    }, 2000);
+
     return () => {
+      window.clearInterval(pollTimer);
       ws.close();
       wsRef.current = null;
     };
@@ -124,22 +158,38 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
     nextStreak: number,
     effect: 'normal' | 'nitro' | 'skid' | 'finished'
   ) {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && roomCode) {
+    if (!roomCode) return;
+    const codeUpper = roomCode.toUpperCase();
+    const payload = {
+      studentId: user.id,
+      progress: nextProgress,
+      speedKmh: nextSpeed,
+      score: nextScore,
+      streak: nextStreak,
+      statusEffect: effect,
+      finishedAt: effect === 'finished' ? Date.now() : undefined,
+    };
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(
         JSON.stringify({
           event: 'room:race_progress',
           payload: {
-            code: roomCode,
-            studentId: user.id,
-            progress: nextProgress,
-            speedKmh: nextSpeed,
-            score: nextScore,
-            streak: nextStreak,
-            statusEffect: effect,
-            finishedAt: effect === 'finished' ? Date.now() : undefined,
+            code: codeUpper,
+            ...payload,
           },
         })
       );
+    } else {
+      fetch(`/api/sessions/${codeUpper}/progress`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.session?.participants) setRoomParticipants(data.session.participants);
+        })
+        .catch(() => {});
     }
   }
 

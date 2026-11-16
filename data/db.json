@@ -8,6 +8,7 @@
       "role": "teacher",
       "avatarColor": "#047857",
       "avatarIcon": "🧑‍🏫",
+      "status": "approved",
       "createdAt": "2026-11-02T05:25:25.672Z",
       "password": "guru"
     }

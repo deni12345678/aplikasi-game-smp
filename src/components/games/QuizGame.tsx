@@ -49,27 +49,43 @@ export const QuizGame: React.FC<QuizGameProps> = ({
 
   useEffect(() => {
     if (!roomCode) return;
+    const codeUpper = roomCode.toUpperCase();
+    const participantPayload = {
+      studentId: user.id,
+      studentName: user.fullName,
+      className: user.className,
+      carColor: user.avatarColor,
+      avatarIcon: user.avatarIcon || '🎓',
+      progress: 0,
+      speedKmh: 0,
+      score: 0,
+      streak: 0,
+      statusEffect: 'normal' as const,
+    };
+
+    fetch(`/api/sessions/${codeUpper}/join`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ participant: participantPayload }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.session?.participants) setRoomPeers(data.session.participants);
+      })
+      .catch(() => {});
+
+    let wsConnected = false;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
     wsRef.current = ws;
     ws.onopen = () => {
+      wsConnected = true;
       ws.send(
         JSON.stringify({
           event: 'room:join',
           payload: {
-            code: roomCode,
-            participant: {
-              studentId: user.id,
-              studentName: user.fullName,
-              className: user.className,
-              carColor: user.avatarColor,
-              avatarIcon: user.avatarIcon || '🎓',
-              progress: 0,
-              speedKmh: 0,
-              score: 0,
-              streak: 0,
-              statusEffect: 'normal',
-            },
+            code: codeUpper,
+            participant: participantPayload,
           },
         })
       );
@@ -84,7 +100,25 @@ export const QuizGame: React.FC<QuizGameProps> = ({
         // Ignore parse error
       }
     };
+    ws.onerror = () => {
+      wsConnected = false;
+    };
+    ws.onclose = () => {
+      wsConnected = false;
+    };
+
+    const pollTimer = window.setInterval(() => {
+      if (wsConnected && ws.readyState === WebSocket.OPEN) return;
+      fetch(`/api/sessions/${codeUpper}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.session?.participants) setRoomPeers(data.session.participants);
+        })
+        .catch(() => {});
+    }, 2500);
+
     return () => {
+      window.clearInterval(pollTimer);
       ws.close();
       wsRef.current = null;
     };
@@ -137,21 +171,38 @@ export const QuizGame: React.FC<QuizGameProps> = ({
       setStreak(0);
     }
 
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && roomCode) {
-      wsRef.current.send(
-        JSON.stringify({
-          event: 'room:race_progress',
-          payload: {
-            code: roomCode,
-            studentId: user.id,
-            progress: Math.round(((currentIndex + 1) / questions.length) * 100),
-            speedKmh: 0,
-            score: nextScore,
-            streak: nextStreak,
-            statusEffect: currentIndex + 1 >= questions.length ? 'finished' : 'normal',
-          },
+    if (roomCode) {
+      const codeUpper = roomCode.toUpperCase();
+      const progressPayload = {
+        studentId: user.id,
+        progress: Math.round(((currentIndex + 1) / questions.length) * 100),
+        speedKmh: 0,
+        score: nextScore,
+        streak: nextStreak,
+        statusEffect: currentIndex + 1 >= questions.length ? 'finished' : 'normal',
+      };
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            event: 'room:race_progress',
+            payload: {
+              code: codeUpper,
+              ...progressPayload,
+            },
+          })
+        );
+      } else {
+        fetch(`/api/sessions/${codeUpper}/progress`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(progressPayload),
         })
-      );
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => {
+            if (data?.session?.participants) setRoomPeers(data.session.participants);
+          })
+          .catch(() => {});
+      }
     }
 
     const detail: AnswerDetail = {

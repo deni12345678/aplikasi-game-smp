@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Award,
   CarFront,
@@ -22,7 +22,13 @@ import { LobbyRoom } from './components/LobbyRoom';
 import { StudentHub } from './components/StudentHub';
 import { TeacherDashboard } from './components/TeacherDashboard';
 import { GAME_META } from './data/tikCurriculum';
-import type { GameType, QuestionCategory, SessionMode, UserAccount } from './types';
+import type {
+  AnalyticsSummary,
+  GameType,
+  QuestionCategory,
+  SessionMode,
+  UserAccount,
+} from './types';
 import { getSoundMuted, setSoundMuted, soundFx } from './utils/sound';
 
 type ActiveSection = 'home' | 'arena' | 'leaderboard' | 'classroom' | 'teacher';
@@ -81,6 +87,63 @@ export default function App() {
   const [muted, setMuted] = useState<boolean>(getSoundMuted());
   const [heroImgFailed, setHeroImgFailed] = useState(false);
   const [emblemImgFailed, setEmblemImgFailed] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    if (user?.role !== 'teacher') {
+      setPendingCount(0);
+      return;
+    }
+
+    let cancelled = false;
+    const syncPending = () => {
+      fetch('/api/analytics')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data: AnalyticsSummary | null) => {
+          if (!cancelled && data) {
+            setPendingCount(data.pendingStudents?.length || 0);
+          }
+        })
+        .catch(() => {});
+    };
+
+    syncPending();
+
+    let wsConnected = false;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+    ws.onopen = () => {
+      wsConnected = true;
+      ws.send(JSON.stringify({ event: 'dashboard:subscribe' }));
+    };
+    ws.onmessage = (evt) => {
+      try {
+        const msg = JSON.parse(evt.data) as { event: string; payload?: AnalyticsSummary };
+        if (msg.event === 'dashboard:update' && msg.payload && !cancelled) {
+          setPendingCount(msg.payload.pendingStudents?.length || 0);
+        }
+      } catch {
+        // Ignore parse error
+      }
+    };
+    ws.onerror = () => {
+      wsConnected = false;
+    };
+    ws.onclose = () => {
+      wsConnected = false;
+    };
+
+    const pollTimer = window.setInterval(() => {
+      if (wsConnected && ws.readyState === WebSocket.OPEN) return;
+      syncPending();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(pollTimer);
+      ws.close();
+    };
+  }, [user?.id, user?.role]);
 
   function handleUserSuccess(loggedUser: UserAccount) {
     setUser(loggedUser);
@@ -211,11 +274,16 @@ export default function App() {
             <button
               type="button"
               onClick={() => handleNavClick('teacher')}
-              className={`whitespace-nowrap shrink-0 transition-colors hover:text-slate-900 ${
+              className={`inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors hover:text-slate-900 ${
                 section === 'teacher' && !activeGame ? 'text-emerald-700 font-semibold' : ''
               }`}
             >
-              Dasbor Guru
+              <span>Dasbor Guru</span>
+              {user?.role === 'teacher' && pendingCount > 0 && (
+                <span className="rounded-md bg-amber-500 px-1.5 py-0.5 font-mono text-[11px] font-bold leading-none text-white tabular-nums">
+                  {pendingCount}
+                </span>
+              )}
             </button>
           </nav>
 
@@ -610,7 +678,7 @@ export default function App() {
             onClick={() => handleNavClick('teacher')}
             className={`rounded-md py-2 ${section === 'teacher' ? 'text-emerald-700 font-bold' : ''}`}
           >
-            Guru
+            {user?.role === 'teacher' && pendingCount > 0 ? `Guru (${pendingCount})` : 'Guru'}
           </button>
         </div>
       </div>

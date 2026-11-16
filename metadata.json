@@ -2,5 +2,7 @@
   "name": "Al Mumtaz TechQuest — Platform Game TIK SMP IT Al Mumtaz YPII",
   "description": "Platform game edukasi TIK interaktif berbasis web dengan 5 mode permainan, sistem akun mandiri siswa, sesi kelas live, dan dasbor analitik guru real-time untuk SMP IT Al Mumtaz YPII.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

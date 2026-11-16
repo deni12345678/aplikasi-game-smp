@@ -20,6 +20,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
   const [avatarIcon, setAvatarIcon] = useState<string>(AVATAR_CHOICES[0].icon);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [pendingNotice, setPendingNotice] = useState('');
   const [loading, setLoading] = useState(false);
 
   if (!isOpen) return null;
@@ -27,6 +28,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+    setPendingNotice('');
     setLoading(true);
     try {
       const endpoint = tab === 'login' ? '/api/auth/login' : '/api/auth/register';
@@ -44,6 +46,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
       if (!res.ok) {
         setError(data.error || 'Terjadi kesalahan saat memproses akun.');
         soundFx.wrong();
+      } else if (data.pendingApproval) {
+        soundFx.correct();
+        setPendingNotice(
+          data.message ||
+            'Pendaftaran terkirim! Akun Anda menunggu persetujuan (ACC) dari Admin Deni Santoso, M.M sebelum dapat masuk.'
+        );
+        setTab('login');
+        setPassword('');
       } else {
         soundFx.correct();
         onSuccess(data.user);
@@ -89,6 +99,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
             onClick={() => {
               setTab('login');
               setError('');
+              setPendingNotice('');
             }}
             className={`flex items-center justify-center gap-2 rounded-md py-2 text-sm font-medium transition-colors whitespace-nowrap ${
               tab === 'login'
@@ -104,6 +115,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
             onClick={() => {
               setTab('register');
               setError('');
+              setPendingNotice('');
             }}
             className={`flex items-center justify-center gap-2 rounded-md py-2 text-sm font-medium transition-colors whitespace-nowrap ${
               tab === 'register'
@@ -206,6 +218,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
               className="mt-1.5 w-full rounded-lg border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20"
             />
           </div>
+
+          {pendingNotice && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-sm text-amber-900">
+              <p className="font-semibold">Menunggu Persetujuan Admin (ACC)</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-amber-800">{pendingNotice}</p>
+            </div>
+          )}
 
           {error && (
             <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

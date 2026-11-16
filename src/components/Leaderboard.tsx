@@ -45,11 +45,13 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
     fetchLeaderboard(selectedClass);
   }, [selectedClass]);
 
-  // Real-time WebSocket listener so Top 10 updates immediately when any student finishes a game
+  // Real-time WebSocket listener with HTTP fallback when WS is unavailable
   useEffect(() => {
+    let wsConnected = false;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
     ws.onopen = () => {
+      wsConnected = true;
       ws.send(JSON.stringify({ event: 'dashboard:subscribe' }));
     };
     ws.onmessage = (evt) => {
@@ -71,7 +73,27 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
         // Ignore malformed messages
       }
     };
-    return () => ws.close();
+    ws.onerror = () => {
+      wsConnected = false;
+    };
+    ws.onclose = () => {
+      wsConnected = false;
+    };
+
+    const pollTimer = window.setInterval(() => {
+      if (wsConnected && ws.readyState === WebSocket.OPEN) return;
+      fetch(`/api/leaderboard?className=${encodeURIComponent(selectedClass)}&limit=10`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.entries) setEntries(data.entries as LeaderboardEntry[]);
+        })
+        .catch(() => {});
+    }, 6000);
+
+    return () => {
+      window.clearInterval(pollTimer);
+      ws.close();
+    };
   }, [selectedClass]);
 
   function getRankIcon(rank: number) {

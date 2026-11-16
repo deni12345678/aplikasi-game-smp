@@ -57,28 +57,54 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
   }, [roomCode, onSessionStarted]);
 
   useEffect(() => {
+    const codeUpper = roomCode.toUpperCase();
+    const participantPayload = {
+      studentId: user.id,
+      studentName: user.fullName,
+      className: user.className,
+      carColor: user.avatarColor,
+      avatarIcon: user.avatarIcon || '🎓',
+      progress: 0,
+      speedKmh: 80,
+      score: 0,
+      streak: 0,
+      statusEffect: 'normal' as const,
+    };
+
+    const applySessionState = (sess: GameSession) => {
+      setSession(sess);
+      if (sess.status === 'active' && !launchedRef.current) {
+        launchedRef.current = true;
+        soundFx.nitro();
+        onSessionStarted(sess);
+      }
+    };
+
+    // Ensure participant registration via REST too (serverless-safe)
+    fetch(`/api/sessions/${codeUpper}/join`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ participant: participantPayload }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.session) applySessionState(data.session as GameSession);
+      })
+      .catch(() => {});
+
+    let wsConnected = false;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
     wsRef.current = ws;
 
     ws.onopen = () => {
+      wsConnected = true;
       ws.send(
         JSON.stringify({
           event: 'room:join',
           payload: {
-            code: roomCode.toUpperCase(),
-            participant: {
-              studentId: user.id,
-              studentName: user.fullName,
-              className: user.className,
-              carColor: user.avatarColor,
-              avatarIcon: user.avatarIcon || '🎓',
-              progress: 0,
-              speedKmh: 80,
-              score: 0,
-              streak: 0,
-              statusEffect: 'normal',
-            },
+            code: codeUpper,
+            participant: participantPayload,
           },
         })
       );
@@ -88,19 +114,34 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
       try {
         const msg = JSON.parse(evt.data) as { event: string; payload: GameSession };
         if (msg.event === 'room:state' && msg.payload) {
-          setSession(msg.payload);
-          if (msg.payload.status === 'active' && !launchedRef.current) {
-            launchedRef.current = true;
-            soundFx.nitro();
-            onSessionStarted(msg.payload);
-          }
+          applySessionState(msg.payload);
         }
       } catch {
         // Ignore malformed message
       }
     };
 
+    ws.onerror = () => {
+      wsConnected = false;
+    };
+
+    ws.onclose = () => {
+      wsConnected = false;
+    };
+
+    // Lightweight HTTP polling fallback when WS is closed/unavailable (Vercel Serverless)
+    const pollTimer = window.setInterval(() => {
+      if (wsConnected && ws.readyState === WebSocket.OPEN) return;
+      fetch(`/api/sessions/${codeUpper}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.session) applySessionState(data.session as GameSession);
+        })
+        .catch(() => {});
+    }, 2000);
+
     return () => {
+      window.clearInterval(pollTimer);
       ws.close();
       wsRef.current = null;
     };

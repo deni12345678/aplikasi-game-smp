@@ -10,6 +10,8 @@ export type QuestionCategory = 'tik' | 'umum' | 'campuran';
 
 export type Continent = 'Asia' | 'Afrika' | 'Eropa' | 'Amerika';
 
+export type AccountStatus = 'pending' | 'approved' | 'rejected';
+
 export interface UserAccount {
   id: string;
   nisOrEmail: string;
@@ -18,6 +20,7 @@ export interface UserAccount {
   role: UserRole;
   avatarColor: string;
   avatarIcon?: string;
+  status?: AccountStatus;
   createdAt: string;
 }
 
@@ -102,6 +105,7 @@ export interface AnalyticsSummary {
   averageAccuracy: number;
   recentScores: ScoreRecord[];
   students: UserAccount[];
+  pendingStudents?: UserAccount[];
   sessions: GameSession[];
   leaderboard: LeaderboardEntry[];
   topicAccuracy: Array<{

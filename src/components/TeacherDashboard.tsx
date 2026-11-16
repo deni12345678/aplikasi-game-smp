@@ -1,5 +1,16 @@
-import React, { useEffect, useState } from 'react';
-import { Plus, RefreshCw, Users, BarChart3, Award, Radio, Download } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Plus,
+  RefreshCw,
+  Users,
+  BarChart3,
+  Award,
+  Radio,
+  Download,
+  Bell,
+  Check,
+  X,
+} from 'lucide-react';
 import { CATEGORY_LABELS, GAME_META } from '../data/tikCurriculum';
 import type {
   AnalyticsSummary,
@@ -9,6 +20,7 @@ import type {
   SessionMode,
   UserAccount,
 } from '../types';
+import { soundFx } from '../utils/sound';
 
 interface TeacherDashboardProps {
   user: UserAccount;
@@ -40,6 +52,27 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [startInLobby, setStartInLobby] = useState(true);
   const [creating, setCreating] = useState(false);
   const [createdSession, setCreatedSession] = useState<GameSession | null>(null);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+  const [liveNotification, setLiveNotification] = useState<string | null>(null);
+  const prevPendingCountRef = useRef<number | null>(null);
+
+  function applyAnalytics(nextData: AnalyticsSummary) {
+    const nextPending = nextData.pendingStudents || [];
+    if (
+      prevPendingCountRef.current !== null &&
+      nextPending.length > prevPendingCountRef.current
+    ) {
+      const newest = nextPending[0];
+      setLiveNotification(
+        newest
+          ? `Notifikasi Baru: ${newest.fullName} (${newest.className}) mendaftar akun dan menunggu ACC Admin.`
+          : 'Ada pendaftaran akun siswa baru yang menunggu ACC Admin.'
+      );
+      soundFx.correct();
+    }
+    prevPendingCountRef.current = nextPending.length;
+    setAnalytics(nextData);
+  }
 
   async function fetchAnalytics() {
     setLoading(true);
@@ -47,7 +80,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       const res = await fetch('/api/analytics');
       if (res.ok) {
         const data = (await res.json()) as AnalyticsSummary;
-        setAnalytics(data);
+        applyAnalytics(data);
       }
     } finally {
       setLoading(false);
@@ -57,23 +90,44 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   useEffect(() => {
     fetchAnalytics();
 
+    let wsConnected = false;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
     ws.onopen = () => {
+      wsConnected = true;
       ws.send(JSON.stringify({ event: 'dashboard:subscribe' }));
     };
     ws.onmessage = (evt) => {
       try {
         const msg = JSON.parse(evt.data) as { event: string; payload: AnalyticsSummary };
         if (msg.event === 'dashboard:update' && msg.payload) {
-          setAnalytics(msg.payload);
+          applyAnalytics(msg.payload);
         }
       } catch {
         // Ignore parse error
       }
     };
+    ws.onerror = () => {
+      wsConnected = false;
+    };
+    ws.onclose = () => {
+      wsConnected = false;
+    };
 
-    return () => ws.close();
+    const pollTimer = window.setInterval(() => {
+      if (wsConnected && ws.readyState === WebSocket.OPEN) return;
+      fetch('/api/analytics')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data) applyAnalytics(data as AnalyticsSummary);
+        })
+        .catch(() => {});
+    }, 4000);
+
+    return () => {
+      window.clearInterval(pollTimer);
+      ws.close();
+    };
   }, []);
 
   async function handleCreateSession(e: React.FormEvent) {
@@ -116,6 +170,29 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     });
     if (res.ok) {
       fetchAnalytics();
+    }
+  }
+
+  async function handleApproval(studentId: string, status: 'approved' | 'rejected') {
+    setProcessingId(studentId);
+    try {
+      const res = await fetch(`/api/users/${studentId}/approval`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { user: UserAccount };
+        soundFx.click();
+        setLiveNotification(
+          status === 'approved'
+            ? `Akun ${data.user.fullName} (${data.user.className}) telah di-ACC dan kini dapat masuk ke portal.`
+            : `Pendaftaran akun ${data.user.fullName} telah ditolak.`
+        );
+        await fetchAnalytics();
+      }
+    } finally {
+      setProcessingId(null);
     }
   }
 
@@ -171,6 +248,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     );
   }
 
+  const pendingStudents = analytics.pendingStudents || [];
+
   const filteredScores = analytics.recentScores.filter((s) => {
     if (classFilter !== 'ALL' && s.className !== classFilter) return false;
     if (gameFilter !== 'ALL' && s.gameType !== gameFilter) return false;
@@ -192,14 +271,26 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             pemahaman materi secara langsung.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={fetchAnalytics}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-          Segarkan Data
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div
+            className={`inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-xs font-semibold ${
+              pendingStudents.length > 0
+                ? 'border-amber-300 bg-amber-50 text-amber-900'
+                : 'border-slate-200 bg-white text-slate-600'
+            }`}
+          >
+            <Bell className={`h-3.5 w-3.5 ${pendingStudents.length > 0 ? 'text-amber-600' : 'text-slate-400'}`} />
+            <span>Menunggu ACC: {pendingStudents.length}</span>
+          </div>
+          <button
+            type="button"
+            onClick={fetchAnalytics}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Segarkan Data
+          </button>
+        </div>
       </div>
 
       {/* 4 Key KPI Metrics */}
@@ -248,6 +339,96 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           <p className="mt-1 text-xs text-slate-500">Ketepatan konsep TIK</p>
         </div>
       </div>
+
+      {/* Notifikasi & Persetujuan Akun Siswa (ACC Admin) */}
+      {(pendingStudents.length > 0 || liveNotification) && (
+        <section className="rounded-xl border border-amber-300 bg-amber-50/70 p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100 text-amber-800">
+                <Bell className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-900">
+                  Notifikasi & Persetujuan Akun Siswa (ACC Admin)
+                </h2>
+                <p className="text-xs text-slate-600">
+                  Siswa baru hanya dapat masuk setelah mendapat persetujuan dari {user.fullName}.
+                </p>
+              </div>
+            </div>
+            {liveNotification && (
+              <button
+                type="button"
+                onClick={() => setLiveNotification(null)}
+                className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+              >
+                Tutup Info
+              </button>
+            )}
+          </div>
+
+          {liveNotification && (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-800">
+              {liveNotification}
+            </div>
+          )}
+
+          {pendingStudents.length > 0 && (
+            <div className="mt-4 space-y-2.5">
+              {pendingStudents.map((stu) => (
+                <div
+                  key={stu.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-white px-4 py-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-xl">
+                      {stu.avatarIcon || '🎓'}
+                    </span>
+                    <div>
+                      <p className="text-sm font-bold text-slate-900">{stu.fullName}</p>
+                      <p className="text-xs text-slate-600">
+                        Kelas {stu.className} · NIS/Email:{' '}
+                        <span className="font-mono font-medium text-slate-800">
+                          {stu.nisOrEmail}
+                        </span>{' '}
+                        · Daftar{' '}
+                        {new Date(stu.createdAt).toLocaleString('id-ID', {
+                          day: '2-digit',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={processingId === stu.id}
+                      onClick={() => handleApproval(stu.id, 'approved')}
+                      className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg bg-emerald-700 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-800 disabled:opacity-60"
+                    >
+                      <Check className="h-4 w-4" />
+                      ACC / Setujui
+                    </button>
+                    <button
+                      type="button"
+                      disabled={processingId === stu.id}
+                      onClick={() => handleApproval(stu.id, 'rejected')}
+                      className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3.5 py-2 text-xs font-semibold text-red-700 transition-colors hover:bg-red-50 disabled:opacity-60"
+                    >
+                      <X className="h-4 w-4" />
+                      Tolak
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Create Room & Topic Mastery Split */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
