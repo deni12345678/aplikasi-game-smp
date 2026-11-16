@@ -1,6 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Flame, Gauge, RotateCcw, Trophy, Zap } from 'lucide-react';
-import { CATEGORY_LABELS, getRacingQuestions } from '../../data/tikCurriculum';
+import {
+  CATEGORY_LABELS,
+  createVariantSeed,
+  getRacingQuestions,
+  shortVariantCode,
+} from '../../data/tikCurriculum';
+import { useCustomQuestions } from '../../hooks/useCustomQuestions';
 import type {
   AnswerDetail,
   GameSession,
@@ -11,6 +17,7 @@ import type {
   UserAccount,
 } from '../../types';
 import { soundFx } from '../../utils/sound';
+import { LiveRoomStandings } from '../LiveRoomStandings';
 
 interface CodeRacerGameProps {
   user: UserAccount;
@@ -29,9 +36,9 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
   onExit,
   onScoreSubmitted,
 }) => {
-  const questions = getRacingQuestions(category);
-  const TOTAL_QUESTIONS = questions.length;
   const [phase, setPhase] = useState<'ready' | 'racing' | 'finished'>('ready');
+  const [playNonce, setPlayNonce] = useState(0);
+  const [sessionMeta, setSessionMeta] = useState<GameSession | null>(null);
   const [qIndex, setQIndex] = useState(0);
   const [progress, setProgress] = useState(0); // 0 to 100
   const [visualProgress, setVisualProgress] = useState(0);
@@ -48,8 +55,28 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
   const [roomParticipants, setRoomParticipants] = useState<LiveRaceParticipant[]>([]);
   const [saving, setSaving] = useState(false);
 
+  const customQuestions = useCustomQuestions();
+  const variantSeed = useMemo(
+    () =>
+      createVariantSeed(
+        user.id,
+        roomCode,
+        sessionMeta?.roundSeed,
+        sessionMeta?.questionMode || 'varied',
+        playNonce
+      ),
+    [user.id, roomCode, sessionMeta?.roundSeed, sessionMeta?.questionMode, playNonce]
+  );
+  const variantCode = useMemo(() => shortVariantCode(variantSeed), [variantSeed]);
+  const questions = useMemo(
+    () => getRacingQuestions(category, variantSeed, customQuestions, 25),
+    [category, variantSeed, customQuestions]
+  );
+  const TOTAL_QUESTIONS = questions.length;
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const photoCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const animStateRef = useRef({
     targetProgress: 0,
     displayProgress: 0,
@@ -80,6 +107,7 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
       className: user.className,
       carColor: user.avatarColor,
       avatarIcon: user.avatarIcon || '🎓',
+      avatarPhoto: user.avatarPhoto,
       progress: 0,
       speedKmh: 80,
       score: 0,
@@ -94,7 +122,10 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (data?.session?.participants) setRoomParticipants(data.session.participants);
+        if (data?.session) {
+          setSessionMeta(data.session as GameSession);
+          if (data.session.participants) setRoomParticipants(data.session.participants);
+        }
       })
       .catch(() => {});
 
@@ -119,8 +150,9 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
     ws.onmessage = (evt) => {
       try {
         const msg = JSON.parse(evt.data) as { event: string; payload: GameSession };
-        if (msg.event === 'room:state' && msg.payload?.participants) {
-          setRoomParticipants(msg.payload.participants);
+        if (msg.event === 'room:state' && msg.payload) {
+          setSessionMeta(msg.payload);
+          if (msg.payload.participants) setRoomParticipants(msg.payload.participants);
         }
       } catch {
         // Ignore parse errors
@@ -139,7 +171,10 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
       fetch(`/api/sessions/${codeUpper}`)
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
-          if (data?.session?.participants) setRoomParticipants(data.session.participants);
+          if (data?.session) {
+            setSessionMeta(data.session as GameSession);
+            if (data.session.participants) setRoomParticipants(data.session.participants);
+          }
         })
         .catch(() => {});
     }, 2000);
@@ -202,13 +237,24 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
 
     let rafId = 0;
 
+    const getCachedPhoto = (photoUrl?: string): HTMLImageElement | null => {
+      if (!photoUrl) return null;
+      const existing = photoCacheRef.current.get(photoUrl);
+      if (existing) return existing.complete ? existing : null;
+      const img = new Image();
+      img.src = photoUrl;
+      photoCacheRef.current.set(photoUrl, img);
+      return img.complete ? img : null;
+    };
+
     const drawCar = (
       x: number,
       y: number,
       bodyColor: string,
       label: string,
       effect: string,
-      isPlayer: boolean
+      isPlayer: boolean,
+      avatarPhoto?: string
     ) => {
       ctx.save();
       const wobbleY = effect === 'skid' ? Math.sin(Date.now() * 0.05) * 2.5 : 0;
@@ -264,17 +310,32 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
       ctx.fillRect(23, -10, 3, 5);
       ctx.fillRect(23, 5, 3, 5);
 
-      // Nameplate
+      // Nameplate (+ uploaded student photo badge if available)
       ctx.font = `${isPlayer ? '700' : '600'} 11px "Plus Jakarta Sans", sans-serif`;
       const textWidth = ctx.measureText(label).width;
+      const photoImg = getCachedPhoto(avatarPhoto);
+      const badgeW = photoImg ? 18 : 0;
+      const plateW = textWidth + 12 + (photoImg ? badgeW + 4 : 0);
+      const plateX = -plateW / 2;
+
       ctx.fillStyle = isPlayer ? '#047857' : '#334155';
       ctx.beginPath();
-      ctx.roundRect(-textWidth / 2 - 6, -32, textWidth + 12, 16, 4);
+      ctx.roundRect(plateX, -33, plateW, 18, 4);
       ctx.fill();
+
+      if (photoImg) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.roundRect(plateX + 2, -31, 14, 14, 3);
+        ctx.clip();
+        ctx.drawImage(photoImg, plateX + 2, -31, 14, 14);
+        ctx.restore();
+      }
+
       ctx.fillStyle = '#FFFFFF';
-      ctx.textAlign = 'center';
+      ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText(label, 0, -24);
+      ctx.fillText(label, plateX + 6 + (photoImg ? badgeW : 0), -24);
 
       ctx.restore();
     };
@@ -381,9 +442,10 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
         playerX,
         playerY,
         user.avatarColor || '#047857',
-        `${user.avatarIcon ? `${user.avatarIcon} ` : ''}${user.fullName.split(' ')[0]} (Kamu)`,
+        `${user.avatarPhoto ? '' : user.avatarIcon ? `${user.avatarIcon} ` : ''}${user.fullName.split(' ')[0]} (Kamu)`,
         state.effect,
-        true
+        true,
+        user.avatarPhoto
       );
 
       // Draw Connected Room Peers or Benchmark Pace Marker
@@ -395,9 +457,10 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
             px,
             py,
             peer.carColor || '#0284C7',
-            `${peer.avatarIcon ? `${peer.avatarIcon} ` : ''}${peer.studentName.split(' ')[0]} · ${peer.className}`,
+            `${peer.avatarPhoto ? '' : peer.avatarIcon ? `${peer.avatarIcon} ` : ''}${peer.studentName.split(' ')[0]} · ${peer.className}`,
             peer.statusEffect,
-            false
+            false,
+            peer.avatarPhoto
           );
         });
       } else {
@@ -413,10 +476,13 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
 
     rafId = window.requestAnimationFrame(render);
     return () => window.cancelAnimationFrame(rafId);
-  }, [user.avatarColor, user.avatarIcon, user.fullName, qIndex]);
+  }, [user.avatarColor, user.avatarIcon, user.avatarPhoto, user.fullName, qIndex, TOTAL_QUESTIONS]);
 
   function startRace() {
     soundFx.nitro();
+    if (phase === 'finished') {
+      setPlayNonce((n) => n + 1);
+    }
     setPhase('racing');
     setQIndex(0);
     setProgress(0);
@@ -558,6 +624,10 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
         <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600">
           <span>Game F · Code Racer 2D · {CATEGORY_LABELS[category]}</span>
           <span aria-hidden="true">·</span>
+          <span className="font-mono text-xs font-semibold text-emerald-700">
+            Paket #{variantCode}
+          </span>
+          <span aria-hidden="true">·</span>
           <span>{roomCode ? `Live Room: ${roomCode}` : 'Mode Latihan Mandiri'}</span>
           <span aria-hidden="true">·</span>
           <span className="font-mono font-bold text-emerald-700 tabular-nums">
@@ -607,15 +677,17 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
 
       {phase === 'ready' && (
         <div className="rounded-xl border border-slate-200 bg-white p-8">
-          <p className="text-xs font-semibold text-emerald-700">Balapan Edukasi TIK</p>
+          <p className="text-xs font-semibold text-emerald-700">
+            Balapan Edukasi · {TOTAL_QUESTIONS} Tantangan Soal
+          </p>
           <h2 className="mt-1 text-2xl font-bold text-slate-900">
             Siap Pacu Mobil Code Racer?
           </h2>
           <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            Mobilmu melaju ke garis finis setiap kali kamu menjawab soal TIK dengan benar. Jawab
-            benar beruntun 2 kali atau lebih untuk memicu <strong>Nitro Boost</strong>! Jawaban
-            salah membuat mobil melambat sementara. Posisi balapan terkirim langsung ke Dasbor
-            Guru.
+            Mobilmu melaju ke garis finis sepanjang <strong>{TOTAL_QUESTIONS} pertanyaan</strong>{' '}
+            setiap kali kamu menjawab dengan benar. Jawab benar beruntun 2 kali atau lebih untuk
+            memicu <strong>Nitro Boost</strong>! Jawaban salah membuat mobil melambat sementara.
+            Posisi balapan terkirim langsung ke Dasbor Guru.
           </p>
           <div className="mt-6">
             <button
@@ -733,6 +805,13 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
           </div>
         </div>
       )}
+
+      <LiveRoomStandings
+        roomCode={roomCode}
+        peers={roomParticipants}
+        currentUserId={user.id}
+        variantCode={variantCode}
+      />
     </div>
   );
 };

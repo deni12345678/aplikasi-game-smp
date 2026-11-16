@@ -1,6 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Clock, Eye, HelpCircle, RotateCcw } from 'lucide-react';
-import { CATEGORY_LABELS, getClueCards } from '../../data/tikCurriculum';
+import {
+  CATEGORY_LABELS,
+  createVariantSeed,
+  getClueCards,
+  shortVariantCode,
+} from '../../data/tikCurriculum';
+import { useCustomQuestions } from '../../hooks/useCustomQuestions';
 import { useRoomSync } from '../../hooks/useRoomSync';
 import type {
   AnswerDetail,
@@ -31,7 +37,7 @@ export const ClueGame: React.FC<ClueGameProps> = ({
   onExit,
   onScoreSubmitted,
 }) => {
-  const cards = getClueCards(category);
+  const [playNonce, setPlayNonce] = useState(0);
   const [cardIdx, setCardIdx] = useState(0);
   const [revealedClues, setRevealedClues] = useState(1);
   const [guess, setGuess] = useState('');
@@ -43,7 +49,26 @@ export const ClueGame: React.FC<ClueGameProps> = ({
   const [phase, setPhase] = useState<'playing' | 'summary'>('playing');
   const [saving, setSaving] = useState(false);
 
-  const { peers, sendProgress } = useRoomSync({ roomCode, user });
+  const customQuestions = useCustomQuestions();
+  const { session, peers, sendProgress } = useRoomSync({ roomCode, user });
+
+  const variantSeed = useMemo(
+    () =>
+      createVariantSeed(
+        user.id,
+        roomCode,
+        session?.roundSeed,
+        session?.questionMode || 'varied',
+        playNonce
+      ),
+    [user.id, roomCode, session?.roundSeed, session?.questionMode, playNonce]
+  );
+  const variantCode = useMemo(() => shortVariantCode(variantSeed), [variantSeed]);
+
+  const cards = useMemo(
+    () => getClueCards(category, variantSeed, customQuestions, 6),
+    [category, variantSeed, customQuestions]
+  );
 
   const card = cards[cardIdx];
 
@@ -175,6 +200,7 @@ export const ClueGame: React.FC<ClueGameProps> = ({
 
   function restartGame() {
     soundFx.click();
+    setPlayNonce((n) => n + 1);
     setCardIdx(0);
     setRevealedClues(1);
     setGuess('');
@@ -203,14 +229,26 @@ export const ClueGame: React.FC<ClueGameProps> = ({
           <ArrowLeft className="h-4 w-4" />
           Kembali ke Arena
         </button>
-        <div className="flex items-center gap-3 text-sm text-slate-500">
+        <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
           <span>Game D · {CATEGORY_LABELS[category]}</span>
+          <span aria-hidden="true">·</span>
+          <span className="font-mono text-xs font-semibold text-emerald-700">
+            Paket #{variantCode}
+          </span>
           <span aria-hidden="true">·</span>
           <span>Kartu {cardIdx + 1}/{cards.length}</span>
           <span aria-hidden="true">·</span>
           <span>{roomCode ? `Live Room ${roomCode.toUpperCase()}` : mode === 'live' ? 'Live Kelas' : 'Mode Mandiri'}</span>
         </div>
       </div>
+
+      <LiveRoomStandings
+        roomCode={roomCode}
+        peers={peers}
+        currentUserId={user.id}
+        variantCode={variantCode}
+        variant="banner"
+      />
 
       {phase === 'playing' && (
         <div className="rounded-xl border border-slate-200 bg-white p-6 sm:p-8">
@@ -364,7 +402,12 @@ export const ClueGame: React.FC<ClueGameProps> = ({
         </div>
       )}
 
-      <LiveRoomStandings roomCode={roomCode} peers={peers} currentUserId={user.id} />
+      <LiveRoomStandings
+        roomCode={roomCode}
+        peers={peers}
+        currentUserId={user.id}
+        variantCode={variantCode}
+      />
     </div>
   );
 };

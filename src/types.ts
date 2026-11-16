@@ -12,6 +12,8 @@ export type Continent = 'Asia' | 'Afrika' | 'Eropa' | 'Amerika';
 
 export type AccountStatus = 'pending' | 'approved' | 'rejected';
 
+export type QuestionMode = 'varied' | 'uniform';
+
 export interface UserAccount {
   id: string;
   nisOrEmail: string;
@@ -20,6 +22,7 @@ export interface UserAccount {
   role: UserRole;
   avatarColor: string;
   avatarIcon?: string;
+  avatarPhoto?: string;
   status?: AccountStatus;
   createdAt: string;
 }
@@ -56,11 +59,27 @@ export interface GameSession {
   gameType: GameType;
   mode: SessionMode;
   category?: QuestionCategory;
+  questionMode?: QuestionMode;
+  roundSeed?: string;
   createdBy: string;
   status: 'waiting' | 'active' | 'finished';
   targetClass: string;
   createdAt: string;
   participants: LiveRaceParticipant[];
+}
+
+export interface CustomQuestion {
+  id: string;
+  targetGame: 'quiz' | 'racing' | 'clue';
+  category: 'tik' | 'umum';
+  topic: string;
+  question: string;
+  options?: string[];
+  correctIndex?: number;
+  answer?: string;
+  clues?: [string, string, string];
+  explanation?: string;
+  createdAt: string;
 }
 
 export interface BadgeItem {
@@ -76,6 +95,7 @@ export interface LiveRaceParticipant {
   className: ClassRoom;
   carColor: string;
   avatarIcon?: string;
+  avatarPhoto?: string;
   progress: number; // 0 to 100
   speedKmh: number;
   score: number;
@@ -91,6 +111,7 @@ export interface LeaderboardEntry {
   className: ClassRoom;
   avatarColor: string;
   avatarIcon?: string;
+  avatarPhoto?: string;
   totalScore: number;
   gamesPlayed: number;
   avgAccuracyPct: number;
@@ -106,6 +127,7 @@ export interface AnalyticsSummary {
   recentScores: ScoreRecord[];
   students: UserAccount[];
   pendingStudents?: UserAccount[];
+  customQuestions?: CustomQuestion[];
   sessions: GameSession[];
   leaderboard: LeaderboardEntry[];
   topicAccuracy: Array<{

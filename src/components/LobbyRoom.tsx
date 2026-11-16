@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Check, Copy, Play, Radio, RotateCcw, Users } from 'lucide-react';
+import { ArrowLeft, Camera, Check, Copy, Play, Radio, RotateCcw, Shuffle, Trash2, Users } from 'lucide-react';
 import { AVATAR_CHOICES, CATEGORY_LABELS, GAME_META } from '../data/tikCurriculum';
-import type { GameSession, GameType, QuestionCategory, UserAccount } from '../types';
+import type { GameSession, GameType, QuestionCategory, QuestionMode, UserAccount } from '../types';
+import { processAvatarFile } from '../utils/avatarPhoto';
 import { soundFx } from '../utils/sound';
+import { AvatarBadge } from './AvatarBadge';
 
 interface LobbyRoomProps {
   roomCode: string;
@@ -26,10 +28,12 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [savingAvatar, setSavingAvatar] = useState(false);
+  const [photoError, setPhotoError] = useState('');
   const [starting, setStarting] = useState(false);
   const [updatingGame, setUpdatingGame] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const launchedRef = useRef(false);
   const prevStatusRef = useRef<'waiting' | 'active' | 'finished' | null>(null);
 
@@ -72,6 +76,7 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
       className: user.className,
       carColor: user.avatarColor,
       avatarIcon: user.avatarIcon || '🎓',
+      avatarPhoto: user.avatarPhoto,
       progress: 0,
       speedKmh: 80,
       score: 0,
@@ -167,13 +172,41 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
     user.className,
     user.avatarColor,
     user.avatarIcon,
+    user.avatarPhoto,
     user.role,
     starting,
     onSessionStarted,
   ]);
 
+  function broadcastAvatarToRoom(updatedUser: UserAccount) {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          event: 'room:join',
+          payload: {
+            code: roomCode.toUpperCase(),
+            participant: {
+              studentId: updatedUser.id,
+              studentName: updatedUser.fullName,
+              className: updatedUser.className,
+              carColor: updatedUser.avatarColor,
+              avatarIcon: updatedUser.avatarIcon || '🎓',
+              avatarPhoto: updatedUser.avatarPhoto,
+              progress: 0,
+              speedKmh: 80,
+              score: 0,
+              streak: 0,
+              statusEffect: 'normal',
+            },
+          },
+        })
+      );
+    }
+  }
+
   async function handleSelectAvatar(icon: string) {
     soundFx.click();
+    setPhotoError('');
     setSavingAvatar(true);
     try {
       const res = await fetch(`/api/users/${user.id}/avatar`, {
@@ -184,55 +217,88 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
       if (res.ok) {
         const data = (await res.json()) as { user: UserAccount };
         onUserUpdate?.(data.user);
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          wsRef.current.send(
-            JSON.stringify({
-              event: 'room:join',
-              payload: {
-                code: roomCode.toUpperCase(),
-                participant: {
-                  studentId: user.id,
-                  studentName: user.fullName,
-                  className: user.className,
-                  carColor: user.avatarColor,
-                  avatarIcon: icon,
-                  progress: 0,
-                  speedKmh: 80,
-                  score: 0,
-                  streak: 0,
-                  statusEffect: 'normal',
-                },
-              },
-            })
-          );
-        }
+        broadcastAvatarToRoom(data.user);
       }
     } finally {
       setSavingAvatar(false);
     }
   }
 
-  async function handleUpdateGame(nextGameType?: GameType, nextCategory?: QuestionCategory) {
+  async function handleUploadPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoError('');
+    setSavingAvatar(true);
+    try {
+      const avatarPhoto = await processAvatarFile(file);
+      const res = await fetch(`/api/users/${user.id}/avatar`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avatarPhoto }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { user: UserAccount };
+        soundFx.correct();
+        onUserUpdate?.(data.user);
+        broadcastAvatarToRoom(data.user);
+      } else {
+        const err = await res.json();
+        setPhotoError(err.error || 'Gagal menyimpan foto.');
+      }
+    } catch (err) {
+      setPhotoError(err instanceof Error ? err.message : 'Gagal memproses foto.');
+    } finally {
+      setSavingAvatar(false);
+      if (photoInputRef.current) photoInputRef.current.value = '';
+    }
+  }
+
+  async function handleRemovePhoto() {
+    setPhotoError('');
+    setSavingAvatar(true);
+    try {
+      const res = await fetch(`/api/users/${user.id}/avatar`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avatarPhoto: null }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { user: UserAccount };
+        soundFx.click();
+        onUserUpdate?.(data.user);
+        broadcastAvatarToRoom(data.user);
+      }
+    } finally {
+      setSavingAvatar(false);
+    }
+  }
+
+  async function handleUpdateGame(
+    nextGameType?: GameType,
+    nextCategory?: QuestionCategory,
+    nextQuestionMode?: QuestionMode
+  ) {
     if (!session || user.role !== 'teacher') return;
     soundFx.click();
     setUpdatingGame(true);
     const codeUpper = roomCode.toUpperCase();
     const gameType = nextGameType ?? session.gameType;
     const category = nextCategory ?? session.category ?? 'tik';
+    const questionMode = nextQuestionMode ?? session.questionMode ?? 'varied';
 
     try {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(
           JSON.stringify({
             event: 'room:update_game',
-            payload: { code: codeUpper, gameType, category },
+            payload: { code: codeUpper, gameType, category, questionMode },
           })
         );
       }
       const res = await fetch(`/api/sessions/${codeUpper}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gameType, category }),
+        body: JSON.stringify({ gameType, category, questionMode }),
       });
       if (res.ok) {
         const data = (await res.json()) as { session: GameSession };
@@ -352,6 +418,12 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
             Kategori: <strong>{CATEGORY_LABELS[session.category || 'tik']}</strong> · Target:{' '}
             <strong>{session.targetClass}</strong> · Pengajar: {session.createdBy}
           </p>
+          <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-900">
+            <Shuffle className="h-3.5 w-3.5 text-emerald-700" />
+            {(session.questionMode || 'varied') === 'varied'
+              ? 'Mode Soal Bervariasi: Setiap siswa menerima susunan soal & opsi berbeda secara acak'
+              : 'Mode Soal Seragam: Seluruh siswa mengerjakan soal dengan urutan yang sama'}
+          </div>
 
           <div className="mt-5 flex flex-wrap items-center gap-4 border-t border-slate-100 pt-5">
             <div>
@@ -413,14 +485,17 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
 
         {/* Avatar Picker Card inside Lobby */}
         <div className="rounded-xl border border-slate-200 bg-white p-6 lg:col-span-4">
-          <p className="text-xs font-semibold text-slate-500">Ikon / Avatar Kamu</p>
+          <p className="text-xs font-semibold text-slate-500">Foto & Ikon Pemain</p>
           <div className="mt-2 flex items-center gap-3">
-            <div
-              className="flex h-12 w-12 items-center justify-center rounded-xl text-2xl shadow-xs"
-              style={{ backgroundColor: user.avatarColor }}
-            >
-              {user.avatarIcon || '🎓'}
-            </div>
+            <AvatarBadge
+              photo={user.avatarPhoto}
+              icon={user.avatarIcon}
+              color={user.avatarColor}
+              alt={user.fullName}
+              sizeClass="h-12 w-12"
+              textClass="text-2xl"
+              roundedClass="rounded-xl"
+            />
             <div className="min-w-0">
               <p className="truncate text-sm font-bold text-slate-900">{user.fullName}</p>
               <p className="text-xs text-slate-500">
@@ -429,17 +504,48 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
             </div>
           </div>
 
-          <p className="mt-4 text-xs font-medium text-slate-600">Ganti Ikon Sebelum Mulai:</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleUploadPhoto}
+              className="hidden"
+            />
+            <button
+              type="button"
+              disabled={savingAvatar}
+              onClick={() => photoInputRef.current?.click()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-700 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+            >
+              <Camera className="h-3.5 w-3.5" />
+              {user.avatarPhoto ? 'Ganti Foto' : 'Masukan Foto Sendiri'}
+            </button>
+            {user.avatarPhoto && (
+              <button
+                type="button"
+                disabled={savingAvatar}
+                onClick={handleRemovePhoto}
+                className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Hapus
+              </button>
+            )}
+          </div>
+          {photoError && <p className="mt-1.5 text-xs text-red-600">{photoError}</p>}
+
+          <p className="mt-4 text-xs font-medium text-slate-600">Atau Pilih Ikon Sebelum Mulai:</p>
           <div className="mt-2 grid grid-cols-4 gap-2">
             {AVATAR_CHOICES.map((av) => {
-              const selected = (user.avatarIcon || '🎓') === av.icon;
+              const selected = !user.avatarPhoto && (user.avatarIcon || '🎓') === av.icon;
               return (
                 <button
                   key={av.id}
                   type="button"
                   title={av.label}
                   onClick={() => handleSelectAvatar(av.icon)}
-                  className={`flex h-11 items-center justify-center rounded-lg border text-xl transition-colors ${
+                  className={`flex h-10 items-center justify-center rounded-lg border text-xl transition-colors ${
                     selected
                       ? 'border-emerald-700 bg-emerald-50 ring-2 ring-emerald-700/20'
                       : 'border-slate-200 bg-white hover:bg-slate-50'
@@ -465,22 +571,41 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
                 Pilih salah satu dari 6 wahana game untuk dimainkan serentak oleh seluruh siswa di room ini.
               </p>
             </div>
-            <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
-              {(['tik', 'umum', 'campuran'] as QuestionCategory[]).map((cat) => (
-                <button
-                  key={cat}
-                  type="button"
-                  disabled={updatingGame}
-                  onClick={() => handleUpdateGame(undefined, cat)}
-                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap ${
-                    (session.category || 'tik') === cat
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  {cat === 'tik' ? 'TIK' : cat === 'umum' ? 'Umum' : 'Campuran'}
-                </button>
-              ))}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
+                {(['varied', 'uniform'] as QuestionMode[]).map((qMode) => (
+                  <button
+                    key={qMode}
+                    type="button"
+                    disabled={updatingGame}
+                    onClick={() => handleUpdateGame(undefined, undefined, qMode)}
+                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap ${
+                      (session.questionMode || 'varied') === qMode
+                        ? 'bg-emerald-700 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {qMode === 'varied' ? 'Soal Acak per Siswa' : 'Soal Sama Semua'}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
+                {(['tik', 'umum', 'campuran'] as QuestionCategory[]).map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    disabled={updatingGame}
+                    onClick={() => handleUpdateGame(undefined, cat, undefined)}
+                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap ${
+                      (session.category || 'tik') === cat
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {cat === 'tik' ? 'TIK' : cat === 'umum' ? 'Umum' : 'Campuran'}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -542,12 +667,14 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
                     isMe ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-200 bg-slate-50/60'
                   }`}
                 >
-                  <div
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-xl"
-                    style={{ backgroundColor: p.carColor || '#047857' }}
-                  >
-                    {p.avatarIcon || '🎓'}
-                  </div>
+                  <AvatarBadge
+                    photo={p.avatarPhoto}
+                    icon={p.avatarIcon}
+                    color={p.carColor || '#047857'}
+                    alt={p.studentName}
+                    sizeClass="h-10 w-10"
+                    textClass="text-xl"
+                  />
                   <div className="min-w-0">
                     <p className="truncate text-sm font-bold text-slate-900">
                       {p.studentName} {isMe ? '(Kamu)' : ''}

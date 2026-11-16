@@ -15,7 +15,12 @@ import {
   Table,
   Wifi,
 } from 'lucide-react';
-import { MATCHING_LEVELS } from '../../data/tikCurriculum';
+import {
+  createVariantSeed,
+  MATCHING_LEVELS,
+  shortVariantCode,
+  shuffleWithSeed,
+} from '../../data/tikCurriculum';
 import { useRoomSync } from '../../hooks/useRoomSync';
 import type { AnswerDetail, ScoreRecord, SessionMode, UserAccount } from '../../types';
 import { soundFx } from '../../utils/sound';
@@ -74,21 +79,36 @@ export const MatchingGame: React.FC<MatchingGameProps> = ({
   const [feedback, setFeedback] = useState<{ text: string; ok: boolean } | null>(null);
   const [startTimeMs, setStartTimeMs] = useState<number>(Date.now());
   const [phase, setPhase] = useState<'playing' | 'summary'>('playing');
+  const [playNonce, setPlayNonce] = useState(0);
   const [finalScore, setFinalScore] = useState(0);
   const [saving, setSaving] = useState(false);
 
-  const { peers, sendProgress } = useRoomSync({ roomCode, user });
+  const { session, peers, sendProgress } = useRoomSync({ roomCode, user });
+
+  const variantSeed = useMemo(
+    () =>
+      createVariantSeed(
+        user.id,
+        roomCode,
+        session?.roundSeed,
+        session?.questionMode || 'varied',
+        playNonce
+      ),
+    [user.id, roomCode, session?.roundSeed, session?.questionMode, playNonce]
+  );
+  const variantCode = useMemo(() => shortVariantCode(variantSeed), [variantSeed]);
 
   const level = MATCHING_LEVELS[levelIdx];
 
-  const shuffledDefinitions = useMemo(() => {
-    const arr = [...level.pairs];
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = (i * 7 + levelIdx * 3) % (i + 1);
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr;
-  }, [level, levelIdx]);
+  const shuffledTerms = useMemo(
+    () => shuffleWithSeed(level.pairs, `${variantSeed}-terms-${levelIdx}`),
+    [level, levelIdx, variantSeed]
+  );
+
+  const shuffledDefinitions = useMemo(
+    () => shuffleWithSeed(level.pairs, `${variantSeed}-defs-${levelIdx}`),
+    [level, levelIdx, variantSeed]
+  );
 
   function attemptMatch(termId: string, targetDefId: string) {
     if (matchedIds.includes(targetDefId) || matchedIds.includes(termId)) return;
@@ -178,6 +198,7 @@ export const MatchingGame: React.FC<MatchingGameProps> = ({
 
   function resetLevel(newIdx = levelIdx) {
     soundFx.click();
+    setPlayNonce((n) => n + 1);
     setLevelIdx(newIdx);
     setMatchedIds([]);
     setSelectedTermId(null);
@@ -202,6 +223,9 @@ export const MatchingGame: React.FC<MatchingGameProps> = ({
         </button>
 
         <div className="flex flex-wrap items-center gap-3">
+          <span className="font-mono text-xs font-semibold text-emerald-700">
+            Paket #{variantCode}
+          </span>
           <span className="text-xs font-semibold text-slate-500">
             {roomCode ? `Live Room ${roomCode.toUpperCase()}` : mode === 'live' ? 'Live Kelas' : 'Mode Mandiri'}
           </span>
@@ -223,6 +247,14 @@ export const MatchingGame: React.FC<MatchingGameProps> = ({
           </div>
         </div>
       </div>
+
+      <LiveRoomStandings
+        roomCode={roomCode}
+        peers={peers}
+        currentUserId={user.id}
+        variantCode={variantCode}
+        variant="banner"
+      />
 
       {phase === 'playing' && (
         <div className="rounded-xl border border-slate-200 bg-white p-6 sm:p-8">
@@ -260,7 +292,7 @@ export const MatchingGame: React.FC<MatchingGameProps> = ({
               <p className="text-xs font-semibold text-slate-500">
                 Istilah & Ikon TIK (Seret atau Ketuk)
               </p>
-              {level.pairs.map((item) => {
+              {shuffledTerms.map((item) => {
                 const isMatched = matchedIds.includes(item.id);
                 const isSelected = selectedTermId === item.id;
                 return (
@@ -379,10 +411,10 @@ export const MatchingGame: React.FC<MatchingGameProps> = ({
           <div className="mt-6 flex flex-wrap gap-3">
             <button
               type="button"
-              onClick={() => resetLevel(levelIdx === 0 ? 1 : 0)}
+              onClick={() => resetLevel((levelIdx + 1) % MATCHING_LEVELS.length)}
               className="rounded-lg bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-800"
             >
-              Mainkan Level {levelIdx === 0 ? '2' : '1'}
+              Mainkan Level {((levelIdx + 1) % MATCHING_LEVELS.length) + 1}
             </button>
             <button
               type="button"
@@ -396,7 +428,12 @@ export const MatchingGame: React.FC<MatchingGameProps> = ({
         </div>
       )}
 
-      <LiveRoomStandings roomCode={roomCode} peers={peers} currentUserId={user.id} />
+      <LiveRoomStandings
+        roomCode={roomCode}
+        peers={peers}
+        currentUserId={user.id}
+        variantCode={variantCode}
+      />
     </div>
   );
 };

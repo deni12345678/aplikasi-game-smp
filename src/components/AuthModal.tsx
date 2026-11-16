@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
-import { X, UserPlus, LogIn } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Camera, Trash2, X, UserPlus, LogIn } from 'lucide-react';
 import { AVATAR_CHOICES } from '../data/tikCurriculum';
 import type { ClassRoom, UserAccount } from '../types';
+import { processAvatarFile } from '../utils/avatarPhoto';
 import { soundFx } from '../utils/sound';
+import { AvatarBadge } from './AvatarBadge';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -18,12 +20,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
   const [fullName, setFullName] = useState('');
   const [className, setClassName] = useState<ClassRoom>('VII-A');
   const [avatarIcon, setAvatarIcon] = useState<string>(AVATAR_CHOICES[0].icon);
+  const [avatarPhoto, setAvatarPhoto] = useState<string | undefined>(undefined);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [pendingNotice, setPendingNotice] = useState('');
   const [loading, setLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   if (!isOpen) return null;
+
+  async function handlePhotoPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError('');
+    try {
+      const processed = await processAvatarFile(file);
+      soundFx.click();
+      setAvatarPhoto(processed);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Gagal memproses foto.');
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -35,7 +54,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
       const payload =
         tab === 'login'
           ? { nisOrEmail, password }
-          : { nisOrEmail, fullName, className, password, avatarIcon };
+          : { nisOrEmail, fullName, className, password, avatarIcon, avatarPhoto };
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -160,11 +179,50 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700">
-                  Pilih Ikon / Avatar Pemain
+                  Foto Profil / Ikon Pemain
                 </label>
-                <div className="mt-1.5 grid grid-cols-4 gap-2">
+
+                <div className="mt-2 flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <AvatarBadge
+                    photo={avatarPhoto}
+                    icon={avatarIcon}
+                    alt={fullName || 'Avatar Siswa'}
+                    sizeClass="h-12 w-12"
+                    textClass="text-2xl"
+                    roundedClass="rounded-xl"
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handlePhotoPick}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-700 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-50"
+                    >
+                      <Camera className="h-3.5 w-3.5" />
+                      {avatarPhoto ? 'Ganti Foto Sendiri' : 'Unggah Foto Sendiri'}
+                    </button>
+                    {avatarPhoto && (
+                      <button
+                        type="button"
+                        onClick={() => setAvatarPhoto(undefined)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Hapus
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-2 grid grid-cols-4 gap-2">
                   {AVATAR_CHOICES.map((av) => {
-                    const selected = avatarIcon === av.icon;
+                    const selected = !avatarPhoto && avatarIcon === av.icon;
                     return (
                       <button
                         key={av.id}
@@ -174,7 +232,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
                           soundFx.click();
                           setAvatarIcon(av.icon);
                         }}
-                        className={`flex h-11 items-center justify-center rounded-lg border text-xl transition-colors ${
+                        className={`flex h-10 items-center justify-center rounded-lg border text-lg transition-colors ${
                           selected
                             ? 'border-emerald-700 bg-emerald-50 ring-2 ring-emerald-700/20'
                             : 'border-slate-200 bg-white hover:bg-slate-50'

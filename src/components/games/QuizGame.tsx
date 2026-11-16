@@ -1,10 +1,15 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, CheckCircle2, Clock, Flame, RotateCcw, XCircle } from 'lucide-react';
-import { CATEGORY_LABELS, getQuizQuestions } from '../../data/tikCurriculum';
+import {
+  CATEGORY_LABELS,
+  createVariantSeed,
+  getQuizQuestions,
+  shortVariantCode,
+} from '../../data/tikCurriculum';
+import { useCustomQuestions } from '../../hooks/useCustomQuestions';
+import { useRoomSync } from '../../hooks/useRoomSync';
 import type {
   AnswerDetail,
-  GameSession,
-  LiveRaceParticipant,
   QuestionCategory,
   ScoreRecord,
   SessionMode,
@@ -32,8 +37,8 @@ export const QuizGame: React.FC<QuizGameProps> = ({
   onExit,
   onScoreSubmitted,
 }) => {
-  const questions = getQuizQuestions(category);
   const [phase, setPhase] = useState<'ready' | 'playing' | 'summary'>('ready');
+  const [playNonce, setPlayNonce] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [timeLeft, setTimeLeft] = useState(QUESTION_TIME_SEC);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
@@ -43,87 +48,29 @@ export const QuizGame: React.FC<QuizGameProps> = ({
   const [answers, setAnswers] = useState<AnswerDetail[]>([]);
   const [questionStartMs, setQuestionStartMs] = useState<number>(Date.now());
   const [saving, setSaving] = useState(false);
-  const [roomPeers, setRoomPeers] = useState<LiveRaceParticipant[]>([]);
-  const wsRef = useRef<WebSocket | null>(null);
+
+  const customQuestions = useCustomQuestions();
+  const { session, peers: roomPeers, sendProgress } = useRoomSync({ roomCode, user });
+
+  const variantSeed = useMemo(
+    () =>
+      createVariantSeed(
+        user.id,
+        roomCode,
+        session?.roundSeed,
+        session?.questionMode || 'varied',
+        playNonce
+      ),
+    [user.id, roomCode, session?.roundSeed, session?.questionMode, playNonce]
+  );
+  const variantCode = useMemo(() => shortVariantCode(variantSeed), [variantSeed]);
+
+  const questions = useMemo(
+    () => getQuizQuestions(category, variantSeed, customQuestions, 8),
+    [category, variantSeed, customQuestions]
+  );
 
   const currentQuestion = questions[currentIndex];
-
-  useEffect(() => {
-    if (!roomCode) return;
-    const codeUpper = roomCode.toUpperCase();
-    const participantPayload = {
-      studentId: user.id,
-      studentName: user.fullName,
-      className: user.className,
-      carColor: user.avatarColor,
-      avatarIcon: user.avatarIcon || '🎓',
-      progress: 0,
-      speedKmh: 0,
-      score: 0,
-      streak: 0,
-      statusEffect: 'normal' as const,
-    };
-
-    fetch(`/api/sessions/${codeUpper}/join`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ participant: participantPayload }),
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.session?.participants) setRoomPeers(data.session.participants);
-      })
-      .catch(() => {});
-
-    let wsConnected = false;
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
-    wsRef.current = ws;
-    ws.onopen = () => {
-      wsConnected = true;
-      ws.send(
-        JSON.stringify({
-          event: 'room:join',
-          payload: {
-            code: codeUpper,
-            participant: participantPayload,
-          },
-        })
-      );
-    };
-    ws.onmessage = (evt) => {
-      try {
-        const msg = JSON.parse(evt.data) as { event: string; payload: GameSession };
-        if (msg.event === 'room:state' && msg.payload?.participants) {
-          setRoomPeers(msg.payload.participants);
-        }
-      } catch {
-        // Ignore parse error
-      }
-    };
-    ws.onerror = () => {
-      wsConnected = false;
-    };
-    ws.onclose = () => {
-      wsConnected = false;
-    };
-
-    const pollTimer = window.setInterval(() => {
-      if (wsConnected && ws.readyState === WebSocket.OPEN) return;
-      fetch(`/api/sessions/${codeUpper}`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          if (data?.session?.participants) setRoomPeers(data.session.participants);
-        })
-        .catch(() => {});
-    }, 2500);
-
-    return () => {
-      window.clearInterval(pollTimer);
-      ws.close();
-      wsRef.current = null;
-    };
-  }, [roomCode, user]);
 
   useEffect(() => {
     if (phase !== 'playing' || selectedOption !== null) return;
@@ -138,6 +85,9 @@ export const QuizGame: React.FC<QuizGameProps> = ({
 
   function startQuiz() {
     soundFx.click();
+    if (phase === 'summary') {
+      setPlayNonce((n) => n + 1);
+    }
     setPhase('playing');
     setCurrentIndex(0);
     setScore(0);
@@ -147,6 +97,7 @@ export const QuizGame: React.FC<QuizGameProps> = ({
     setSelectedOption(null);
     setTimeLeft(QUESTION_TIME_SEC);
     setQuestionStartMs(Date.now());
+    sendProgress({ progress: 0, score: 0, streak: 0, statusEffect: 'normal' });
   }
 
   function handleSelectOption(idx: number) {
@@ -173,37 +124,13 @@ export const QuizGame: React.FC<QuizGameProps> = ({
     }
 
     if (roomCode) {
-      const codeUpper = roomCode.toUpperCase();
-      const progressPayload = {
-        studentId: user.id,
+      sendProgress({
         progress: Math.round(((currentIndex + 1) / questions.length) * 100),
-        speedKmh: 0,
         score: nextScore,
         streak: nextStreak,
         statusEffect: currentIndex + 1 >= questions.length ? 'finished' : 'normal',
-      };
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(
-          JSON.stringify({
-            event: 'room:race_progress',
-            payload: {
-              code: codeUpper,
-              ...progressPayload,
-            },
-          })
-        );
-      } else {
-        fetch(`/api/sessions/${codeUpper}/progress`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(progressPayload),
-        })
-          .then((r) => (r.ok ? r.json() : null))
-          .then((data) => {
-            if (data?.session?.participants) setRoomPeers(data.session.participants);
-          })
-          .catch(() => {});
-      }
+        finishedAt: currentIndex + 1 >= questions.length ? Date.now() : undefined,
+      });
     }
 
     const detail: AnswerDetail = {
@@ -278,12 +205,24 @@ export const QuizGame: React.FC<QuizGameProps> = ({
           <ArrowLeft className="h-4 w-4" />
           Kembali ke Arena
         </button>
-        <div className="flex items-center gap-3 text-sm text-slate-500">
+        <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
           <span>Game A · {CATEGORY_LABELS[category]}</span>
+          <span aria-hidden="true">·</span>
+          <span className="font-mono text-xs font-semibold text-emerald-700">
+            Paket Soal #{variantCode}
+          </span>
           <span aria-hidden="true">·</span>
           <span>{mode === 'live' ? `Live Room ${roomCode || 'Kelas'}` : 'Mode Mandiri'}</span>
         </div>
       </div>
+
+      <LiveRoomStandings
+        roomCode={roomCode}
+        peers={roomPeers}
+        currentUserId={user.id}
+        variantCode={variantCode}
+        variant="banner"
+      />
 
       {phase === 'ready' && (
         <div className="rounded-xl border border-slate-200 bg-white p-8">
@@ -445,7 +384,12 @@ export const QuizGame: React.FC<QuizGameProps> = ({
         </div>
       )}
 
-      <LiveRoomStandings roomCode={roomCode} peers={roomPeers} currentUserId={user.id} />
+      <LiveRoomStandings
+        roomCode={roomCode}
+        peers={roomPeers}
+        currentUserId={user.id}
+        variantCode={variantCode}
+      />
 
       {phase === 'summary' && (
         <div className="rounded-xl border border-slate-200 bg-white p-8">

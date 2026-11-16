@@ -1,5 +1,16 @@
-import React, { useEffect, useState } from 'react';
-import { ArrowRight, Award, CheckCircle2, KeyRound, Lock, PlayCircle, Plus, User } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  ArrowRight,
+  Award,
+  Camera,
+  CheckCircle2,
+  KeyRound,
+  Lock,
+  PlayCircle,
+  Plus,
+  Trash2,
+  User,
+} from 'lucide-react';
 import { AVATAR_CHOICES, CATEGORY_LABELS, computeStudentBadges, GAME_META } from '../data/tikCurriculum';
 import type {
   GameSession,
@@ -9,7 +20,9 @@ import type {
   SessionMode,
   UserAccount,
 } from '../types';
+import { processAvatarFile } from '../utils/avatarPhoto';
 import { soundFx } from '../utils/sound';
+import { AvatarBadge } from './AvatarBadge';
 
 interface StudentHubProps {
   user: UserAccount;
@@ -34,6 +47,8 @@ export const StudentHub: React.FC<StudentHubProps> = ({
   const [sessions, setSessions] = useState<GameSession[]>([]);
   const [myScores, setMyScores] = useState<ScoreRecord[]>([]);
   const [savingAvatar, setSavingAvatar] = useState(false);
+  const [photoError, setPhotoError] = useState('');
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   // Quick classroom room creator for teachers
   const [quickTitle, setQuickTitle] = useState('');
@@ -96,6 +111,7 @@ export const StudentHub: React.FC<StudentHubProps> = ({
 
   async function handleSelectAvatar(icon: string) {
     soundFx.click();
+    setPhotoError('');
     setSavingAvatar(true);
     try {
       const res = await fetch(`/api/users/${user.id}/avatar`, {
@@ -105,6 +121,53 @@ export const StudentHub: React.FC<StudentHubProps> = ({
       });
       if (res.ok) {
         const data = (await res.json()) as { user: UserAccount };
+        onUserUpdate?.(data.user);
+      }
+    } finally {
+      setSavingAvatar(false);
+    }
+  }
+
+  async function handleUploadPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoError('');
+    setSavingAvatar(true);
+    try {
+      const avatarPhoto = await processAvatarFile(file);
+      const res = await fetch(`/api/users/${user.id}/avatar`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avatarPhoto }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { user: UserAccount };
+        soundFx.correct();
+        onUserUpdate?.(data.user);
+      } else {
+        const err = await res.json();
+        setPhotoError(err.error || 'Gagal menyimpan foto profil.');
+      }
+    } catch (err) {
+      setPhotoError(err instanceof Error ? err.message : 'Gagal memproses foto.');
+    } finally {
+      setSavingAvatar(false);
+      if (photoInputRef.current) photoInputRef.current.value = '';
+    }
+  }
+
+  async function handleRemovePhoto() {
+    setPhotoError('');
+    setSavingAvatar(true);
+    try {
+      const res = await fetch(`/api/users/${user.id}/avatar`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avatarPhoto: null }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { user: UserAccount };
+        soundFx.click();
         onUserUpdate?.(data.user);
       }
     } finally {
@@ -242,24 +305,60 @@ export const StudentHub: React.FC<StudentHubProps> = ({
             <User className="h-4 w-4 text-emerald-700" />
             Profil Pelajar SMP IT Al Mumtaz YPII
           </div>
-          <div className="mt-3 flex items-center gap-3.5">
-            <div
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-2xl shadow-xs"
-              style={{ backgroundColor: user.avatarColor }}
-            >
-              {user.avatarIcon || '🎓'}
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3.5">
+              <AvatarBadge
+                photo={user.avatarPhoto}
+                icon={user.avatarIcon}
+                color={user.avatarColor}
+                alt={user.fullName}
+                sizeClass="h-14 w-14"
+                textClass="text-2xl"
+                roundedClass="rounded-xl"
+              />
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">{user.fullName}</h2>
+                <p className="text-sm text-slate-600">
+                  Kelas {user.className} · ID/NIS {user.nisOrEmail}
+                </p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-xl font-bold text-slate-900">{user.fullName}</h2>
-              <p className="text-sm text-slate-600">
-                Kelas {user.className} · ID/NIS {user.nisOrEmail}
-              </p>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleUploadPhoto}
+                className="hidden"
+              />
+              <button
+                type="button"
+                disabled={savingAvatar}
+                onClick={() => photoInputRef.current?.click()}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-700 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+              >
+                <Camera className="h-3.5 w-3.5" />
+                {user.avatarPhoto ? 'Ganti Foto Sendiri' : 'Masukan Foto Sendiri'}
+              </button>
+              {user.avatarPhoto && (
+                <button
+                  type="button"
+                  disabled={savingAvatar}
+                  onClick={handleRemovePhoto}
+                  className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Hapus
+                </button>
+              )}
             </div>
           </div>
+          {photoError && <p className="mt-2 text-xs font-medium text-red-600">{photoError}</p>}
 
           <div className="mt-4">
             <p className="text-xs font-medium text-slate-500">
-              Ikon / Avatar Pemain {savingAvatar ? '(Menyimpan...)' : ''}
+              Ikon / Avatar Cadangan {savingAvatar ? '(Menyimpan...)' : ''}
             </p>
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {AVATAR_CHOICES.map((av) => {

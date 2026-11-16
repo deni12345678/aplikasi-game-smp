@@ -3,6 +3,7 @@ import { Award, Medal, RefreshCw, Trophy } from 'lucide-react';
 import { GAME_META } from '../data/tikCurriculum';
 import type { AnalyticsSummary, LeaderboardEntry, UserAccount } from '../types';
 import { soundFx } from '../utils/sound';
+import { AvatarBadge } from './AvatarBadge';
 
 interface LeaderboardProps {
   currentUser?: UserAccount | null;
@@ -195,18 +196,20 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                 </div>
 
                 <div className="mt-3 flex items-center gap-3">
-                  <div
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg font-display text-lg font-bold text-white"
-                    style={{ backgroundColor: item.avatarColor }}
-                  >
-                    {item.avatarIcon ||
-                      item.studentName
-                        .split(' ')
-                        .slice(0, 2)
-                        .map((w) => w[0])
-                        .join('')
-                        .toUpperCase()}
-                  </div>
+                  <AvatarBadge
+                    photo={item.avatarPhoto}
+                    icon={item.avatarIcon}
+                    fallbackText={item.studentName
+                      .split(' ')
+                      .slice(0, 2)
+                      .map((w) => w[0])
+                      .join('')
+                      .toUpperCase()}
+                    color={item.avatarColor}
+                    alt={item.studentName}
+                    sizeClass="h-10 w-10"
+                    textClass="font-display text-lg font-bold"
+                  />
                   <div className="min-w-0">
                     <p className="truncate text-base font-bold text-slate-900">
                       {item.studentName} {isMe ? '(Kamu)' : ''}
@@ -276,12 +279,16 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                       </td>
                       <td className="py-3.5 px-3">
                         <div className="flex items-center gap-3">
-                          <span
-                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md font-display text-base font-bold text-white"
-                            style={{ backgroundColor: row.avatarColor }}
-                          >
-                            {row.avatarIcon || row.studentName[0]?.toUpperCase()}
-                          </span>
+                          <AvatarBadge
+                            photo={row.avatarPhoto}
+                            icon={row.avatarIcon}
+                            fallbackText={row.studentName[0]?.toUpperCase() || '🎓'}
+                            color={row.avatarColor}
+                            alt={row.studentName}
+                            sizeClass="h-8 w-8"
+                            textClass="font-display text-base font-bold"
+                            roundedClass="rounded-md"
+                          />
                           <span className="font-semibold text-slate-900">
                             {row.studentName}
                             {isCurrent ? ' (Kamu)' : ''}

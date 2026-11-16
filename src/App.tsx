@@ -11,6 +11,7 @@ import {
   VolumeX,
 } from 'lucide-react';
 import { AuthModal } from './components/AuthModal';
+import { AvatarBadge } from './components/AvatarBadge';
 import { ClueGame } from './components/games/ClueGame';
 import { CodeRacerGame } from './components/games/CodeRacerGame';
 import { FlagQuizGame } from './components/games/FlagQuizGame';
@@ -53,6 +54,177 @@ function renderGameIcon(type: GameType) {
       return <Puzzle className={cls} />;
     case 'racing':
       return <CarFront className={cls} />;
+  }
+}
+
+function renderGamePreview(type: GameType) {
+  switch (type) {
+    case 'quiz':
+      return (
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
+            <span>SOAL ACAK UNIK</span>
+            <span className="font-bold text-emerald-700">15s</span>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-1.5 text-[11px] font-semibold">
+            <div className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-emerald-800">
+              A. Enkripsi
+            </div>
+            <div className="rounded border border-slate-200 bg-white px-2 py-1 text-slate-600">
+              B. Phishing
+            </div>
+            <div className="rounded border border-slate-200 bg-white px-2 py-1 text-slate-600">
+              C. Router
+            </div>
+            <div className="rounded border border-slate-200 bg-white px-2 py-1 text-slate-600">
+              D. Firewall
+            </div>
+          </div>
+        </div>
+      );
+    case 'flag':
+      return (
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
+            <span>4 BENUA DUNIA</span>
+            <span className="font-bold text-sky-700">LIVE</span>
+          </div>
+          <div className="mt-2 grid grid-cols-4 gap-1.5 text-center text-xs font-bold">
+            <div className="rounded border border-slate-200 bg-white py-1.5">
+              <div className="h-2.5 w-full bg-red-600" />
+              <div className="h-2.5 w-full bg-white" />
+              <span className="mt-1 block text-[10px] text-slate-600">Asia</span>
+            </div>
+            <div className="rounded border border-slate-200 bg-white py-1.5">
+              <div className="flex h-5 w-full">
+                <span className="flex-1 bg-emerald-700" />
+                <span className="flex-1 bg-white" />
+                <span className="flex-1 bg-emerald-700" />
+              </div>
+              <span className="mt-1 block text-[10px] text-slate-600">Afrika</span>
+            </div>
+            <div className="rounded border border-slate-200 bg-white py-1.5">
+              <div className="flex h-5 w-full">
+                <span className="flex-1 bg-blue-700" />
+                <span className="flex-1 bg-white" />
+                <span className="flex-1 bg-red-600" />
+              </div>
+              <span className="mt-1 block text-[10px] text-slate-600">Eropa</span>
+            </div>
+            <div className="rounded border border-slate-200 bg-white py-1.5">
+              <div className="flex h-5 w-full">
+                <span className="flex-1 bg-red-600" />
+                <span className="flex-1 bg-white" />
+                <span className="flex-1 bg-red-600" />
+              </div>
+              <span className="mt-1 block text-[10px] text-slate-600">Amerika</span>
+            </div>
+          </div>
+        </div>
+      );
+    case 'matching':
+      return (
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
+            <span>PASANGKAN KONSEP</span>
+            <span className="font-bold text-emerald-700">DRAG / KLIK</span>
+          </div>
+          <div className="mt-2 space-y-1.5 text-[11px] font-semibold">
+            <div className="flex items-center justify-between gap-2">
+              <span className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-emerald-900">
+                CPU
+              </span>
+              <span className="h-0.5 flex-1 bg-emerald-400" />
+              <span className="rounded border border-emerald-300 bg-white px-2 py-1 text-slate-700">
+                Otak Proses
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="rounded border border-slate-200 bg-white px-2 py-1 text-slate-700">
+                RAM
+              </span>
+              <span className="h-0.5 flex-1 bg-slate-300" />
+              <span className="rounded border border-slate-200 bg-white px-2 py-1 text-slate-700">
+                Memori Kerja
+              </span>
+            </div>
+          </div>
+        </div>
+      );
+    case 'clue':
+      return (
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
+            <span>PETUNJUK BERTAHAP</span>
+            <span className="font-bold text-amber-700">3 CLUE</span>
+          </div>
+          <div className="mt-2 space-y-1 text-[11px]">
+            <div className="rounded border border-amber-200 bg-amber-50 px-2 py-1 font-medium text-amber-900">
+              1. Mengatur lalu lintas paket data...
+            </div>
+            <div className="flex items-center justify-between rounded border border-slate-200 bg-white px-2 py-1 font-mono font-bold text-slate-700">
+              <span>R _ U _ E _</span>
+              <span className="text-[10px] text-emerald-700">+150 pts</span>
+            </div>
+          </div>
+        </div>
+      );
+    case 'puzzle':
+      return (
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
+            <span>TTS & ALUR LOGIKA</span>
+            <span className="font-bold text-emerald-700">KOMPUTASIONAL</span>
+          </div>
+          <div className="mt-2 flex items-center gap-3">
+            <div className="grid grid-cols-4 gap-0.5 font-mono text-[10px] font-bold">
+              {['C', 'P', 'U', ' ', ' ', 'I', ' ', ' ', 'R', 'A', 'M', ' '].map((ch, i) => (
+                <span
+                  key={i}
+                  className={`flex h-5 w-5 items-center justify-center rounded-xs ${
+                    ch.trim()
+                      ? 'border border-emerald-300 bg-white text-slate-900'
+                      : 'bg-slate-200/70'
+                  }`}
+                >
+                  {ch}
+                </span>
+              ))}
+            </div>
+            <div className="flex-1 space-y-1 text-[10px] font-semibold text-slate-600">
+              <div className="rounded border border-slate-200 bg-white px-2 py-0.5">1. Input Data</div>
+              <div className="rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-800">
+                2. Proses Logika
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    case 'racing':
+      return (
+        <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900 p-3 text-white">
+          <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+            <span>CODE RACER 2D</span>
+            <span className="font-bold text-amber-400">NITRO 2.5x</span>
+          </div>
+          <div className="mt-2 space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className="text-xs">🏎️</span>
+              <div className="h-2 flex-1 overflow-hidden rounded bg-slate-800">
+                <div className="h-full w-4/5 bg-emerald-500" />
+              </div>
+              <span className="font-mono text-[10px] text-emerald-400">82%</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs">🤖</span>
+              <div className="h-2 flex-1 overflow-hidden rounded bg-slate-800">
+                <div className="h-full w-3/5 bg-amber-400" />
+              </div>
+              <span className="font-mono text-[10px] text-amber-300">61%</span>
+            </div>
+          </div>
+        </div>
+      );
   }
 }
 
@@ -293,9 +465,18 @@ export default function App() {
               <button
                 type="button"
                 onClick={handleLogout}
-                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-800 transition-colors hover:bg-slate-100 whitespace-nowrap shrink-0"
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 transition-colors hover:bg-slate-100 whitespace-nowrap shrink-0"
               >
-                Keluar ({user.fullName.split(' ')[0]})
+                <AvatarBadge
+                  photo={user.avatarPhoto}
+                  icon={user.avatarIcon}
+                  color={user.avatarColor}
+                  alt={user.fullName}
+                  sizeClass="h-6 w-6"
+                  textClass="text-xs"
+                  roundedClass="rounded-md"
+                />
+                <span>Keluar ({user.fullName.split(' ')[0]})</span>
               </button>
             ) : (
               <button
@@ -562,6 +743,22 @@ export default function App() {
                 </div>
               </div>
 
+              {selectedMode === 'live' && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-950">
+                  <p className="font-medium">
+                    <strong>Mode Kelas Bersama Aktif ({liveRoomCode.trim().toUpperCase() || 'TIK701'}):</strong>{' '}
+                    Semua 6 game di bawah tersinkronisasi real-time antar HP/laptop siswa dengan paket soal acak berbeda per peserta.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => openLobby(liveRoomCode.trim() || 'TIK701')}
+                    className="rounded-lg bg-emerald-700 px-3 py-1.5 font-semibold text-white hover:bg-emerald-800"
+                  >
+                    Masuk Ruang Tunggu Bersama
+                  </button>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
                 {GAME_ORDER.map((type) => {
                   const meta = GAME_META[type];
@@ -581,9 +778,10 @@ export default function App() {
                         <p className="mt-2 text-sm leading-relaxed text-slate-600">
                           {meta.subtitle}
                         </p>
+                        {renderGamePreview(type)}
                       </div>
 
-                      <div className="mt-6 border-t border-slate-100 pt-4">
+                      <div className="mt-5 border-t border-slate-100 pt-4">
                         <p className="text-xs text-slate-500">{meta.topicFocus}</p>
                         <button
                           type="button"

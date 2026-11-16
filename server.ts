@@ -3,7 +3,13 @@ import path from 'path';
 import express from 'express';
 import { WebSocket, WebSocketServer } from 'ws';
 import { buildAnalytics, createAppRuntime, saveDatabase } from './server/app';
-import type { GameSession, GameType, LiveRaceParticipant, QuestionCategory } from './src/types';
+import type {
+  GameSession,
+  GameType,
+  LiveRaceParticipant,
+  QuestionCategory,
+  QuestionMode,
+} from './src/types';
 
 async function startServer() {
   const roomSubscribers = new Map<string, Set<WebSocket>>();
@@ -144,6 +150,7 @@ async function startServer() {
           if (session) {
             if (payload.gameType) session.gameType = payload.gameType as GameType;
             if (payload.category) session.category = payload.category as QuestionCategory;
+            if (payload.questionMode) session.questionMode = payload.questionMode as QuestionMode;
             saveDatabase(db);
             broadcastToRoom(code, 'room:state', session);
             broadcastToDashboard('dashboard:update', buildAnalytics(db));
@@ -155,6 +162,7 @@ async function startServer() {
           const session = db.sessions.find((s) => s.code === code);
           if (session) {
             session.status = 'waiting';
+            session.roundSeed = `r-${Date.now()}`;
             session.participants = session.participants.map((p) => ({
               ...p,
               progress: 0,

@@ -5,11 +5,13 @@ import type {
   AccountStatus,
   AnalyticsSummary,
   ClassRoom,
+  CustomQuestion,
   GameSession,
   GameType,
   LeaderboardEntry,
   LiveRaceParticipant,
   QuestionCategory,
+  QuestionMode,
   ScoreRecord,
   SessionMode,
   UserAccount,
@@ -23,6 +25,7 @@ export interface DatabaseSchema {
   users: StoredUser[];
   scores: ScoreRecord[];
   sessions: GameSession[];
+  customQuestions?: CustomQuestion[];
 }
 
 export interface RuntimeHooks {
@@ -63,6 +66,8 @@ export function createSeedDatabase(): DatabaseSchema {
       gameType: 'racing',
       mode: 'live',
       category: 'tik',
+      questionMode: 'varied',
+      roundSeed: 'seed-tik701',
       createdBy: 'Deni Santoso, M.M',
       status: 'active',
       targetClass: 'Semua Kelas',
@@ -75,6 +80,8 @@ export function createSeedDatabase(): DatabaseSchema {
       gameType: 'quiz',
       mode: 'homework',
       category: 'campuran',
+      questionMode: 'varied',
+      roundSeed: 'seed-pr0802',
       createdBy: 'Deni Santoso, M.M',
       status: 'active',
       targetClass: 'VII-A & VII-B',
@@ -83,7 +90,7 @@ export function createSeedDatabase(): DatabaseSchema {
     },
   ];
 
-  return { users, scores, sessions };
+  return { users, scores, sessions, customQuestions: [] };
 }
 
 export function loadDatabase(): DatabaseSchema {
@@ -100,6 +107,9 @@ export function loadDatabase(): DatabaseSchema {
     const parsed = JSON.parse(raw) as DatabaseSchema;
     if (!parsed.users || !parsed.scores || !parsed.sessions) {
       throw new Error('Malformed DB');
+    }
+    if (!Array.isArray(parsed.customQuestions)) {
+      parsed.customQuestions = [];
     }
     return parsed;
   } catch {
@@ -147,6 +157,7 @@ export function buildLeaderboard(
       className: ClassRoom;
       avatarColor: string;
       avatarIcon: string;
+      avatarPhoto?: string;
       totalScore: number;
       gamesPlayed: number;
       correctSum: number;
@@ -169,6 +180,7 @@ export function buildLeaderboard(
         className: (userObj?.className || sc.className) as ClassRoom,
         avatarColor: userObj?.avatarColor || '#047857',
         avatarIcon: userObj?.avatarIcon || '🎓',
+        avatarPhoto: userObj?.avatarPhoto,
         totalScore: sc.score,
         gamesPlayed: 1,
         correctSum: sc.correctCount,
@@ -193,6 +205,7 @@ export function buildLeaderboard(
       className: item.className,
       avatarColor: item.avatarColor,
       avatarIcon: item.avatarIcon,
+      avatarPhoto: item.avatarPhoto,
       totalScore: item.totalScore,
       gamesPlayed: item.gamesPlayed,
       avgAccuracyPct:
@@ -274,6 +287,7 @@ export function buildAnalytics(db: DatabaseSchema): AnalyticsSummary {
     ),
     students,
     pendingStudents,
+    customQuestions: db.customQuestions || [],
     sessions: db.sessions,
     leaderboard: buildLeaderboard(db, 'ALL', 100),
     topicAccuracy,
@@ -295,7 +309,7 @@ export function createAppRuntime(hooks: RuntimeHooks = {}): {
   db: DatabaseSchema;
 } {
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: '4mb' }));
 
   const db = loadDatabase();
 
@@ -312,16 +326,24 @@ export function createAppRuntime(hooks: RuntimeHooks = {}): {
   });
 
   app.post('/api/auth/register', (req, res) => {
-    const { nisOrEmail, fullName, className, password, avatarIcon } = req.body as {
+    const { nisOrEmail, fullName, className, password, avatarIcon, avatarPhoto } = req.body as {
       nisOrEmail?: string;
       fullName?: string;
       className?: ClassRoom;
       password?: string;
       avatarIcon?: string;
+      avatarPhoto?: string;
     };
 
     if (!nisOrEmail?.trim() || !fullName?.trim() || !className || !password?.trim()) {
       return res.status(400).json({ error: 'Semua kolom pendaftaran wajib diisi.' });
+    }
+
+    if (
+      avatarPhoto &&
+      (!avatarPhoto.startsWith('data:image/') || avatarPhoto.length > 350_000)
+    ) {
+      return res.status(400).json({ error: 'Format atau ukuran foto profil tidak valid.' });
     }
 
     const normalized = nisOrEmail.trim().toLowerCase();
@@ -345,6 +367,7 @@ export function createAppRuntime(hooks: RuntimeHooks = {}): {
       role: 'student',
       avatarColor: AVATAR_COLORS[db.users.length % AVATAR_COLORS.length],
       avatarIcon: avatarIcon?.trim() || '🤖',
+      ...(avatarPhoto ? { avatarPhoto } : {}),
       status: 'pending',
       createdAt: new Date().toISOString(),
       password: password.trim(),
@@ -414,21 +437,43 @@ export function createAppRuntime(hooks: RuntimeHooks = {}): {
 
   app.patch('/api/users/:id/avatar', (req, res) => {
     const { id } = req.params;
-    const { avatarIcon } = req.body as { avatarIcon?: string };
-    if (!avatarIcon?.trim()) {
-      return res.status(400).json({ error: 'Ikon avatar tidak boleh kosong.' });
+    const { avatarIcon, avatarPhoto } = req.body as {
+      avatarIcon?: string;
+      avatarPhoto?: string | null;
+    };
+
+    if (!avatarIcon?.trim() && avatarPhoto === undefined) {
+      return res.status(400).json({ error: 'Pilih ikon avatar atau unggah foto profil.' });
     }
+
+    if (
+      typeof avatarPhoto === 'string' &&
+      (!avatarPhoto.startsWith('data:image/') || avatarPhoto.length > 350_000)
+    ) {
+      return res.status(400).json({ error: 'Format atau ukuran foto terlalu besar.' });
+    }
+
     const found = db.users.find((u) => u.id === id);
     if (!found) {
       return res.status(404).json({ error: 'Akun pengguna tidak ditemukan.' });
     }
-    found.avatarIcon = avatarIcon.trim();
+
+    if (avatarIcon?.trim()) {
+      found.avatarIcon = avatarIcon.trim();
+    }
+    if (avatarPhoto === null) {
+      delete found.avatarPhoto;
+    } else if (typeof avatarPhoto === 'string') {
+      found.avatarPhoto = avatarPhoto;
+    }
+
     for (const sess of db.sessions) {
       const pIdx = sess.participants.findIndex((p) => p.studentId === id);
       if (pIdx !== -1) {
         sess.participants[pIdx] = {
           ...sess.participants[pIdx],
           avatarIcon: found.avatarIcon,
+          avatarPhoto: found.avatarPhoto,
         };
         notifyRoom(sess.code, sess);
       }
@@ -452,11 +497,21 @@ export function createAppRuntime(hooks: RuntimeHooks = {}): {
   });
 
   app.post('/api/sessions', (req, res) => {
-    const { title, gameType, mode, category, targetClass, createdBy, startInLobby } = req.body as {
+    const {
+      title,
+      gameType,
+      mode,
+      category,
+      questionMode,
+      targetClass,
+      createdBy,
+      startInLobby,
+    } = req.body as {
       title?: string;
       gameType?: GameType;
       mode?: SessionMode;
       category?: QuestionCategory;
+      questionMode?: QuestionMode;
       targetClass?: string;
       createdBy?: string;
       startInLobby?: boolean;
@@ -472,6 +527,8 @@ export function createAppRuntime(hooks: RuntimeHooks = {}): {
       gameType,
       mode,
       category: category || 'tik',
+      questionMode: questionMode || 'varied',
+      roundSeed: `r-${Date.now()}`,
       createdBy: createdBy || 'Deni Santoso, M.M',
       status: startInLobby ? 'waiting' : 'active',
       targetClass: targetClass || 'Semua Kelas',
@@ -492,16 +549,19 @@ export function createAppRuntime(hooks: RuntimeHooks = {}): {
     if (!session) {
       return res.status(404).json({ error: 'Sesi tidak ditemukan.' });
     }
-    const { status, category, gameType, resetParticipants } = req.body as {
+    const { status, category, gameType, questionMode, resetParticipants } = req.body as {
       status?: 'waiting' | 'active' | 'finished';
       category?: QuestionCategory;
       gameType?: GameType;
+      questionMode?: QuestionMode;
       resetParticipants?: boolean;
     };
     if (status) session.status = status;
     if (category) session.category = category;
     if (gameType) session.gameType = gameType;
+    if (questionMode) session.questionMode = questionMode;
     if (resetParticipants) {
+      session.roundSeed = `r-${Date.now()}`;
       session.participants = session.participants.map((p) => ({
         ...p,
         progress: 0,
@@ -516,6 +576,71 @@ export function createAppRuntime(hooks: RuntimeHooks = {}): {
     notifyRoom(code, session);
     notifyDashboard();
     return res.json({ session });
+  });
+
+  app.get('/api/questions', (_req, res) => {
+    res.json({ questions: db.customQuestions || [] });
+  });
+
+  app.post('/api/questions', (req, res) => {
+    const body = req.body as {
+      targetGame?: 'quiz' | 'racing' | 'clue';
+      category?: 'tik' | 'umum';
+      topic?: string;
+      question?: string;
+      options?: string[];
+      correctIndex?: number;
+      answer?: string;
+      clues?: [string, string, string];
+      explanation?: string;
+    };
+
+    if (!body.targetGame || !body.category || !body.topic?.trim()) {
+      return res.status(400).json({ error: 'Target game, kategori, dan topik soal wajib diisi.' });
+    }
+
+    if (body.targetGame === 'clue') {
+      if (!body.answer?.trim() || !body.clues || body.clues.some((c) => !c.trim())) {
+        return res.status(400).json({ error: 'Jawaban dan 3 petunjuk (clue) wajib diisi.' });
+      }
+    } else {
+      if (!body.question?.trim() || !body.options || body.options.length < 2) {
+        return res.status(400).json({ error: 'Teks pertanyaan dan pilihan jawaban wajib diisi.' });
+      }
+    }
+
+    const newQuestion: CustomQuestion = {
+      id: `cq-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      targetGame: body.targetGame,
+      category: body.category,
+      topic: body.topic.trim(),
+      question: body.question?.trim() || `Tebak istilah: ${body.answer?.trim()}`,
+      options: body.options?.map((o) => o.trim()),
+      correctIndex: typeof body.correctIndex === 'number' ? body.correctIndex : 0,
+      answer: body.answer?.trim().toUpperCase(),
+      clues: body.clues?.map((c) => c.trim()) as [string, string, string] | undefined,
+      explanation: body.explanation?.trim() || 'Soal tambahan dari Guru TIK SMP IT Al Mumtaz YPII.',
+      createdAt: new Date().toISOString(),
+    };
+
+    if (!db.customQuestions) db.customQuestions = [];
+    db.customQuestions.unshift(newQuestion);
+    saveDatabase(db);
+    notifyDashboard();
+    return res.status(201).json({ question: newQuestion });
+  });
+
+  app.delete('/api/questions/:id', (req, res) => {
+    const { id } = req.params;
+    if (!db.customQuestions) db.customQuestions = [];
+    const before = db.customQuestions.length;
+    db.customQuestions = db.customQuestions.filter((q) => q.id !== id);
+    if (db.customQuestions.length === before) {
+      return res.status(404).json({ error: 'Soal tidak ditemukan.' });
+    }
+    saveDatabase(db);
+    notifyDashboard();
+    return res.json({ ok: true });
   });
 
   // HTTP fallback endpoints for serverless hosts (e.g. Vercel) where WebSockets are unavailable

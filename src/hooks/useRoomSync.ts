@@ -35,6 +35,7 @@ export function useRoomSync({ roomCode, user, initialSpeed = 0 }: UseRoomSyncOpt
       className: user.className,
       carColor: user.avatarColor,
       avatarIcon: user.avatarIcon || '🎓',
+      avatarPhoto: user.avatarPhoto,
       progress: 0,
       speedKmh: initialSpeed,
       score: 0,
@@ -112,7 +113,7 @@ export function useRoomSync({ roomCode, user, initialSpeed = 0 }: UseRoomSyncOpt
       ws.close();
       wsRef.current = null;
     };
-  }, [roomCode, user.id, user.fullName, user.className, user.avatarColor, user.avatarIcon, initialSpeed]);
+  }, [roomCode, user.id, user.fullName, user.className, user.avatarColor, user.avatarIcon, user.avatarPhoto, initialSpeed]);
 
   const sendProgress = useCallback(
     (update: ProgressUpdate) => {

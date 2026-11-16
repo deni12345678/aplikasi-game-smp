@@ -1,6 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { ArrowDown, ArrowLeft, ArrowUp, CheckCircle2, RotateCcw } from 'lucide-react';
-import { ALGORITHM_CHALLENGES, CROSSWORD_WORDS } from '../../data/tikCurriculum';
+import {
+  ALGORITHM_CHALLENGES,
+  createVariantSeed,
+  CROSSWORD_WORDS,
+  shortVariantCode,
+  shuffleWithSeed,
+} from '../../data/tikCurriculum';
 import { useRoomSync } from '../../hooks/useRoomSync';
 import type { AnswerDetail, ScoreRecord, SessionMode, UserAccount } from '../../types';
 import { soundFx } from '../../utils/sound';
@@ -38,7 +44,20 @@ export const PuzzleGame: React.FC<PuzzleGameProps> = ({
   const [saving, setSaving] = useState(false);
   const [savedScore, setSavedScore] = useState<number | null>(null);
 
-  const { peers, sendProgress } = useRoomSync({ roomCode, user });
+  const { session, peers, sendProgress } = useRoomSync({ roomCode, user });
+
+  const variantSeed = useMemo(
+    () =>
+      createVariantSeed(
+        user.id,
+        roomCode,
+        session?.roundSeed,
+        session?.questionMode || 'varied',
+        algoIdx
+      ),
+    [user.id, roomCode, session?.roundSeed, session?.questionMode, algoIdx]
+  );
+  const variantCode = useMemo(() => shortVariantCode(variantSeed), [variantSeed]);
 
   const cellSolutionMap = useMemo(() => {
     const map = new Map<string, { char: string; numbers: number[] }>();
@@ -78,8 +97,14 @@ export const PuzzleGame: React.FC<PuzzleGameProps> = ({
   function switchAlgoChallenge(nextIdx: number) {
     soundFx.click();
     setAlgoIdx(nextIdx);
-    const arr = [...ALGORITHM_CHALLENGES[nextIdx].correctOrder];
-    setAlgoOrder([arr[3], arr[0], arr[4], arr[2], arr[1]]);
+    const seed = createVariantSeed(
+      user.id,
+      roomCode,
+      session?.roundSeed,
+      session?.questionMode || 'varied',
+      nextIdx
+    );
+    setAlgoOrder(shuffleWithSeed(ALGORITHM_CHALLENGES[nextIdx].correctOrder, `${seed}-algo`));
     setAlgoChecked(null);
   }
 
@@ -245,6 +270,9 @@ export const PuzzleGame: React.FC<PuzzleGameProps> = ({
         </button>
 
         <div className="flex flex-wrap items-center gap-3">
+          <span className="font-mono text-xs font-semibold text-emerald-700">
+            Paket #{variantCode}
+          </span>
           <span className="text-xs font-semibold text-slate-500">
             {roomCode ? `Live Room ${roomCode.toUpperCase()}` : mode === 'live' ? 'Live Kelas' : 'Mode Mandiri'}
           </span>
@@ -280,6 +308,14 @@ export const PuzzleGame: React.FC<PuzzleGameProps> = ({
           </div>
         </div>
       </div>
+
+      <LiveRoomStandings
+        roomCode={roomCode}
+        peers={peers}
+        currentUserId={user.id}
+        variantCode={variantCode}
+        variant="banner"
+      />
 
       {subMode === 'tts' && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
@@ -426,7 +462,7 @@ export const PuzzleGame: React.FC<PuzzleGameProps> = ({
               <h2 className="mt-1 text-xl font-bold text-slate-900">{currentAlgo.title}</h2>
               <p className="mt-1 text-sm text-slate-600">{currentAlgo.context}</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {ALGORITHM_CHALLENGES.map((ch, idx) => (
                 <button
                   key={ch.id}
@@ -515,7 +551,12 @@ export const PuzzleGame: React.FC<PuzzleGameProps> = ({
         </div>
       )}
 
-      <LiveRoomStandings roomCode={roomCode} peers={peers} currentUserId={user.id} />
+      <LiveRoomStandings
+        roomCode={roomCode}
+        peers={peers}
+        currentUserId={user.id}
+        variantCode={variantCode}
+      />
     </div>
   );
 };

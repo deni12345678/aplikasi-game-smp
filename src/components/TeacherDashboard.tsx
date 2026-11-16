@@ -10,6 +10,10 @@ import {
   Bell,
   Check,
   X,
+  Shuffle,
+  Monitor,
+  BookOpen,
+  Trash2,
 } from 'lucide-react';
 import { CATEGORY_LABELS, GAME_META } from '../data/tikCurriculum';
 import type {
@@ -17,10 +21,12 @@ import type {
   GameSession,
   GameType,
   QuestionCategory,
+  QuestionMode,
   SessionMode,
   UserAccount,
 } from '../types';
 import { soundFx } from '../utils/sound';
+import { AvatarBadge } from './AvatarBadge';
 
 interface TeacherDashboardProps {
   user: UserAccount;
@@ -48,13 +54,28 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [gameType, setGameType] = useState<GameType>('racing');
   const [mode, setMode] = useState<SessionMode>('live');
   const [category, setCategory] = useState<QuestionCategory>('tik');
+  const [questionMode, setQuestionMode] = useState<QuestionMode>('varied');
   const [targetClass, setTargetClass] = useState('Semua Kelas');
   const [startInLobby, setStartInLobby] = useState(true);
   const [creating, setCreating] = useState(false);
   const [createdSession, setCreatedSession] = useState<GameSession | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [liveNotification, setLiveNotification] = useState<string | null>(null);
+  const [selectedLiveRoomCode, setSelectedLiveRoomCode] = useState<string>('');
   const prevPendingCountRef = useRef<number | null>(null);
+
+  // Custom question manager
+  const [cqTargetGame, setCqTargetGame] = useState<'quiz' | 'racing' | 'clue'>('quiz');
+  const [cqCategory, setCqCategory] = useState<'tik' | 'umum'>('tik');
+  const [cqTopic, setCqTopic] = useState('');
+  const [cqQuestion, setCqQuestion] = useState('');
+  const [cqOptions, setCqOptions] = useState<[string, string, string, string]>(['', '', '', '']);
+  const [cqCorrectIndex, setCqCorrectIndex] = useState(0);
+  const [cqAnswer, setCqAnswer] = useState('');
+  const [cqClues, setCqClues] = useState<[string, string, string]>(['', '', '']);
+  const [cqExplanation, setCqExplanation] = useState('');
+  const [savingQuestion, setSavingQuestion] = useState(false);
+  const [cqNotice, setCqNotice] = useState<string | null>(null);
 
   function applyAnalytics(nextData: AnalyticsSummary) {
     const nextPending = nextData.pendingStudents || [];
@@ -143,6 +164,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           gameType,
           mode,
           category,
+          questionMode,
           targetClass,
           createdBy: user.fullName,
           startInLobby: mode === 'live' ? startInLobby : false,
@@ -151,6 +173,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       if (res.ok) {
         const data = await res.json();
         setCreatedSession(data.session);
+        setSelectedLiveRoomCode(data.session.code);
         setTitle('');
         fetchAnalytics();
       }
@@ -161,7 +184,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
   async function updateSession(
     code: string,
-    patch: { status?: 'waiting' | 'active' | 'finished'; category?: QuestionCategory }
+    patch: {
+      status?: 'waiting' | 'active' | 'finished';
+      category?: QuestionCategory;
+      questionMode?: QuestionMode;
+      gameType?: GameType;
+    }
   ) {
     const res = await fetch(`/api/sessions/${code}`, {
       method: 'PATCH',
@@ -170,6 +198,64 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     });
     if (res.ok) {
       fetchAnalytics();
+    }
+  }
+
+  async function handleCreateCustomQuestion(e: React.FormEvent) {
+    e.preventDefault();
+    setCqNotice(null);
+    setSavingQuestion(true);
+    try {
+      const payload =
+        cqTargetGame === 'clue'
+          ? {
+              targetGame: cqTargetGame,
+              category: cqCategory,
+              topic: cqTopic,
+              answer: cqAnswer,
+              clues: cqClues,
+              explanation: cqExplanation,
+            }
+          : {
+              targetGame: cqTargetGame,
+              category: cqCategory,
+              topic: cqTopic,
+              question: cqQuestion,
+              options: cqOptions,
+              correctIndex: cqCorrectIndex,
+              explanation: cqExplanation,
+            };
+
+      const res = await fetch('/api/questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setCqNotice(data.error || 'Gagal menyimpan soal.');
+        return;
+      }
+      soundFx.correct();
+      setCqTopic('');
+      setCqQuestion('');
+      setCqOptions(['', '', '', '']);
+      setCqCorrectIndex(0);
+      setCqAnswer('');
+      setCqClues(['', '', '']);
+      setCqExplanation('');
+      setCqNotice('Soal berhasil ditambahkan ke bank soal kelas dan langsung aktif di permainan.');
+      await fetchAnalytics();
+    } finally {
+      setSavingQuestion(false);
+    }
+  }
+
+  async function handleDeleteCustomQuestion(id: string) {
+    const res = await fetch(`/api/questions/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      soundFx.click();
+      await fetchAnalytics();
     }
   }
 
@@ -382,9 +468,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-white px-4 py-3"
                 >
                   <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-xl">
-                      {stu.avatarIcon || '🎓'}
-                    </span>
+                    <AvatarBadge
+                      photo={stu.avatarPhoto}
+                      icon={stu.avatarIcon}
+                      color={stu.avatarColor}
+                      alt={stu.fullName}
+                      sizeClass="h-10 w-10"
+                      textClass="text-xl"
+                    />
                     <div>
                       <p className="text-sm font-bold text-slate-900">{stu.fullName}</p>
                       <p className="text-xs text-slate-600">
@@ -495,14 +586,26 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-700">Target Kelas</label>
-                <input
-                  type="text"
-                  value={targetClass}
-                  onChange={(e) => setTargetClass(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-700"
-                />
+                <label className="block text-xs font-medium text-slate-700">Variasi Soal</label>
+                <select
+                  value={questionMode}
+                  onChange={(e) => setQuestionMode(e.target.value as QuestionMode)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-700"
+                >
+                  <option value="varied">Acak Unik per Siswa</option>
+                  <option value="uniform">Urutan Sama Semua</option>
+                </select>
               </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-700">Target Kelas</label>
+              <input
+                type="text"
+                value={targetClass}
+                onChange={(e) => setTargetClass(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-700"
+              />
             </div>
 
             {mode === 'live' && (
@@ -677,48 +780,403 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         </div>
       </div>
 
-      {/* Live Race Monitor if any room has participants */}
-      {analytics.sessions.some((s) => s.participants.length > 0) && (
-        <div className="rounded-xl border border-slate-200 bg-white p-6">
-          <h2 className="text-lg font-bold text-slate-900">
-            Posisi Balapan & Lobby Live (Real-Time)
-          </h2>
-          <div className="mt-4 space-y-3">
-            {analytics.sessions
-              .filter((s) => s.participants.length > 0)
-              .map((sess) => (
-                <div key={sess.code} className="space-y-2 border-t border-slate-100 pt-3 first:border-t-0 first:pt-0">
-                  <p className="font-mono text-xs font-bold text-emerald-700">
-                    ROOM {sess.code} · {sess.title}
-                  </p>
-                  {sess.participants
-                    .slice()
-                    .sort((a, b) => b.progress - a.progress || b.score - a.score)
-                    .map((p, rank) => (
-                      <div key={p.studentId} className="flex items-center gap-4 text-sm">
-                        <span className="w-6 font-mono font-bold text-slate-500 tabular-nums">
-                          #{rank + 1}
-                        </span>
-                        <span className="w-48 truncate font-medium text-slate-900">
-                          <span className="mr-1.5">{p.avatarIcon || '🎓'}</span>
-                          {p.studentName} ({p.className})
-                        </span>
-                        <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100">
-                          <div
-                            className="h-full rounded-full bg-emerald-600 transition-all duration-300"
-                            style={{ width: `${p.progress}%` }}
-                          />
-                        </div>
-                        <span className="w-28 text-right font-mono text-xs text-slate-700 tabular-nums">
-                          {p.progress}% · {p.score} pts
-                        </span>
-                      </div>
-                    ))}
+      {/* Tampilan Layar Kelas Live (Proyektor) */}
+      {analytics.sessions.length > 0 && (() => {
+        const liveSessions = analytics.sessions.filter((s) => s.mode === 'live');
+        const projectorList = liveSessions.length > 0 ? liveSessions : analytics.sessions;
+        const activeRoom =
+          projectorList.find((s) => s.code === selectedLiveRoomCode) ||
+          projectorList.find((s) => s.participants.length > 0) ||
+          projectorList[0];
+
+        if (!activeRoom) return null;
+        const sortedParticipants = activeRoom.participants
+          .slice()
+          .sort((a, b) => b.score - a.score || b.progress - a.progress);
+
+        return (
+          <section className="rounded-xl border border-slate-800 bg-slate-900 p-6 text-white">
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-700 text-white">
+                  <Monitor className="h-5 w-5" />
                 </div>
-              ))}
+                <div>
+                  <p className="text-xs font-semibold text-emerald-400">
+                    Tampilan Layar Kelas Live (Proyektor) · Real-Time
+                  </p>
+                  <h2 className="text-lg font-bold text-white">
+                    {activeRoom.code} — {activeRoom.title}
+                  </h2>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {projectorList.slice(0, 5).map((sess) => (
+                  <button
+                    key={sess.code}
+                    type="button"
+                    onClick={() => setSelectedLiveRoomCode(sess.code)}
+                    className={`rounded-lg px-3 py-1.5 font-mono text-xs font-bold transition-colors ${
+                      activeRoom.code === sess.code
+                        ? 'bg-emerald-600 text-white'
+                        : 'border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    {sess.code} ({sess.participants.length})
+                  </button>
+                ))}
+                {onOpenLobby && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenLobby(activeRoom.code)}
+                    className="rounded-lg bg-amber-500 px-3.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-amber-400"
+                  >
+                    Kelola Lobby
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/60 px-4 py-3 text-xs">
+              <div className="flex flex-wrap items-center gap-3 text-slate-300">
+                <span>
+                  Game Aktif:{' '}
+                  <strong className="text-white">{GAME_META[activeRoom.gameType].title}</strong>
+                </span>
+                <span>·</span>
+                <span>
+                  Kategori:{' '}
+                  <strong className="text-emerald-400">
+                    {CATEGORY_LABELS[activeRoom.category || 'tik']}
+                  </strong>
+                </span>
+                <span>·</span>
+                <span className="inline-flex items-center gap-1 font-semibold text-amber-300">
+                  <Shuffle className="h-3.5 w-3.5" />
+                  {(activeRoom.questionMode || 'varied') === 'varied'
+                    ? 'Soal Acak Berbeda per Siswa'
+                    : 'Soal Seragam'}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  aria-label="Ganti game untuk room aktif"
+                  value={activeRoom.gameType}
+                  onChange={(e) =>
+                    updateSession(activeRoom.code, { gameType: e.target.value as GameType })
+                  }
+                  className="rounded-md border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs font-semibold text-white"
+                >
+                  <option value="quiz">A. Quiz Interaktif</option>
+                  <option value="flag">B. Tebak Bendera Dunia</option>
+                  <option value="matching">C. Game Balasan</option>
+                  <option value="clue">D. Tebak Clue</option>
+                  <option value="puzzle">E. Teka-Teki & Logika</option>
+                  <option value="racing">F. Code Racer 2D</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateSession(activeRoom.code, {
+                      questionMode:
+                        (activeRoom.questionMode || 'varied') === 'varied' ? 'uniform' : 'varied',
+                    })
+                  }
+                  className="rounded-md border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-200 hover:bg-slate-700"
+                >
+                  Ubah ke {(activeRoom.questionMode || 'varied') === 'varied' ? 'Soal Sama' : 'Soal Acak'}
+                </button>
+              </div>
+            </div>
+
+            {sortedParticipants.length === 0 ? (
+              <div className="mt-4 rounded-lg border border-dashed border-slate-700 bg-slate-950/40 px-4 py-8 text-center">
+                <p className="text-sm font-semibold text-slate-200">
+                  Menunggu siswa bergabung ke room{' '}
+                  <span className="font-mono text-emerald-400">{activeRoom.code}</span>
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Begitu siswa masuk Lobby atau memainkan salah satu dari 6 game, posisi dan skor mereka
+                  akan tampil otomatis di layar proyektor ini.
+                </p>
+              </div>
+            ) : (
+              <div className="mt-4 space-y-2.5">
+                {sortedParticipants.map((p, rank) => (
+                  <div
+                    key={p.studentId}
+                    className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/50 px-4 py-2.5"
+                  >
+                    <span className="w-7 font-mono text-sm font-bold text-amber-400 tabular-nums">
+                      #{rank + 1}
+                    </span>
+                    <AvatarBadge
+                      photo={p.avatarPhoto}
+                      icon={p.avatarIcon}
+                      color={p.carColor || '#047857'}
+                      alt={p.studentName}
+                      sizeClass="h-8 w-8"
+                      textClass="text-base"
+                      roundedClass="rounded-md"
+                    />
+                    <div className="w-44 min-w-0">
+                      <p className="truncate text-sm font-bold text-white">{p.studentName}</p>
+                      <p className="text-[11px] text-slate-400">
+                        Kelas {p.className} ·{' '}
+                        {p.finishedAt
+                          ? 'Selesai'
+                          : p.statusEffect === 'nitro'
+                          ? 'Nitro Aktif'
+                          : p.statusEffect === 'skid'
+                          ? 'Hambatan'
+                          : 'Bermain'}
+                      </p>
+                    </div>
+                    <div className="relative h-4 flex-1 min-w-[140px] overflow-hidden rounded-md bg-slate-800">
+                      <div
+                        className="h-full transition-all duration-300"
+                        style={{
+                          width: `${Math.max(4, p.progress)}%`,
+                          backgroundColor: p.carColor || '#10b981',
+                        }}
+                      />
+                    </div>
+                    <span className="w-32 text-right font-mono text-xs font-bold text-emerald-400 tabular-nums">
+                      {p.progress}% · {p.score} pts
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        );
+      })()}
+
+      {/* Bank Soal Bervariasi (Kelola Soal Guru) */}
+      <section className="rounded-xl border border-slate-200 bg-white p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
+              <BookOpen className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">
+                Bank Soal Bervariasi (Tambahan Guru)
+              </h2>
+              <p className="text-xs text-slate-500">
+                Tambahkan variasi soal baru agar setiap ronde kelas memiliki bank soal yang kaya dan tidak mudah ditebak.
+              </p>
+            </div>
+          </div>
+          <span className="font-mono text-xs font-bold text-slate-600">
+            {(analytics.customQuestions || []).length} Soal Kustom Aktif
+          </span>
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 gap-6 lg:grid-cols-12">
+          <form onSubmit={handleCreateCustomQuestion} className="space-y-3 lg:col-span-6">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-700">Untuk Game</label>
+                <select
+                  value={cqTargetGame}
+                  onChange={(e) => setCqTargetGame(e.target.value as 'quiz' | 'racing' | 'clue')}
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-700"
+                >
+                  <option value="quiz">A. Quiz Interaktif</option>
+                  <option value="racing">F. Code Racer 2D</option>
+                  <option value="clue">D. Tebak Clue</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700">Kategori</label>
+                <select
+                  value={cqCategory}
+                  onChange={(e) => setCqCategory(e.target.value as 'tik' | 'umum')}
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-700"
+                >
+                  <option value="tik">TIK & Adab Digital</option>
+                  <option value="umum">Pengetahuan Umum</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-700">Topik / Materi</label>
+              <input
+                type="text"
+                required
+                value={cqTopic}
+                onChange={(e) => setCqTopic(e.target.value)}
+                placeholder="Contoh: Jaringan Komputer / Keamanan Siber"
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-700"
+              />
+            </div>
+
+            {cqTargetGame === 'clue' ? (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700">
+                    Kata Jawaban (1 Kata / Istilah Singkat)
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={cqAnswer}
+                    onChange={(e) => setCqAnswer(e.target.value.toUpperCase())}
+                    placeholder="Contoh: ROUTER"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm uppercase outline-none focus:border-emerald-700"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-slate-700">
+                    3 Petunjuk Bertahap
+                  </label>
+                  {[0, 1, 2].map((idx) => (
+                    <input
+                      key={idx}
+                      type="text"
+                      required
+                      value={cqClues[idx]}
+                      onChange={(e) => {
+                        const next: [string, string, string] = [...cqClues] as [string, string, string];
+                        next[idx] = e.target.value;
+                        setCqClues(next);
+                      }}
+                      placeholder={`Clue #${idx + 1}`}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-700"
+                    />
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700">Pertanyaan</label>
+                  <textarea
+                    required
+                    rows={2}
+                    value={cqQuestion}
+                    onChange={(e) => setCqQuestion(e.target.value)}
+                    placeholder="Tulis pertanyaan yang jelas untuk siswa SMP..."
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-700"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {[0, 1, 2, 3].map((idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="cqCorrect"
+                        checked={cqCorrectIndex === idx}
+                        onChange={() => setCqCorrectIndex(idx)}
+                        aria-label={`Tandai opsi ${String.fromCharCode(65 + idx)} benar`}
+                        className="h-4 w-4 text-emerald-700"
+                      />
+                      <input
+                        type="text"
+                        required
+                        value={cqOptions[idx]}
+                        onChange={(e) => {
+                          const next: [string, string, string, string] = [...cqOptions] as [
+                            string,
+                            string,
+                            string,
+                            string,
+                          ];
+                          next[idx] = e.target.value;
+                          setCqOptions(next);
+                        }}
+                        placeholder={`Opsi ${String.fromCharCode(65 + idx)}`}
+                        className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-emerald-700"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Pilih lingkaran radio di sebelah kiri opsi yang merupakan jawaban benar.
+                </p>
+              </>
+            )}
+
+            <div>
+              <label className="block text-xs font-medium text-slate-700">
+                Penjelasan / Hikmah Singkat
+              </label>
+              <input
+                type="text"
+                value={cqExplanation}
+                onChange={(e) => setCqExplanation(e.target.value)}
+                placeholder="Muncul sebagai umpan balik edukatif setelah siswa menjawab"
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-700"
+              />
+            </div>
+
+            {cqNotice && (
+              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
+                {cqNotice}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={savingQuestion}
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
+            >
+              <Plus className="h-4 w-4" />
+              {savingQuestion ? 'Menyimpan Soal...' : 'Tambah ke Bank Soal'}
+            </button>
+          </form>
+
+          <div className="space-y-2.5 lg:col-span-6">
+            <p className="text-xs font-semibold text-slate-600">
+              Daftar Soal Tambahan Guru (Otomatis ikut diacak ke siswa)
+            </p>
+            {(analytics.customQuestions || []).length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-xs text-slate-500">
+                Belum ada soal kustom tambahan. Saat ini game menggunakan bank soal bawaan (lebih dari 60 soal TIK, Umum, dan Bendera Dunia). Tambahkan soal baru melalui formulir di samping.
+              </div>
+            ) : (
+              <div className="max-h-96 space-y-2.5 overflow-y-auto pr-1">
+                {(analytics.customQuestions || []).map((q) => (
+                  <div
+                    key={q.id}
+                    className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-emerald-700">
+                        {q.targetGame === 'quiz'
+                          ? 'Quiz Interaktif'
+                          : q.targetGame === 'racing'
+                          ? 'Code Racer 2D'
+                          : 'Tebak Clue'}{' '}
+                        · {q.category.toUpperCase()} · {q.topic}
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">
+                        {q.targetGame === 'clue' ? `Jawaban: ${q.answer}` : q.question}
+                      </p>
+                      {q.explanation && (
+                        <p className="mt-1 text-xs text-slate-500 line-clamp-2">{q.explanation}</p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCustomQuestion(q.id)}
+                      aria-label="Hapus soal"
+                      className="shrink-0 rounded-md border border-red-200 bg-white p-1.5 text-red-600 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
-      )}
+      </section>
 
       {/* Score History Table */}
       <div className="rounded-xl border border-slate-200 bg-white p-6">
