@@ -66,7 +66,7 @@ export const ClueGame: React.FC<ClueGameProps> = ({
   const variantCode = useMemo(() => shortVariantCode(variantSeed), [variantSeed]);
 
   const cards = useMemo(
-    () => getClueCards(category, variantSeed, customQuestions, 6),
+    () => getClueCards(category, variantSeed, customQuestions, 25),
     [category, variantSeed, customQuestions]
   );
 

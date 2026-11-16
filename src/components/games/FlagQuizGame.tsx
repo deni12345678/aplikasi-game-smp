@@ -68,7 +68,7 @@ export const FlagQuizGame: React.FC<FlagQuizGameProps> = ({
   const variantCode = useMemo(() => shortVariantCode(variantSeed), [variantSeed]);
 
   const questions = useMemo(
-    () => getFlagQuestions(selectedContinent, variantSeed, 8),
+    () => getFlagQuestions(selectedContinent, variantSeed, 25),
     [selectedContinent, variantSeed]
   );
 
