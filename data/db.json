@@ -1,0 +1,42 @@
+{
+  "users": [
+    {
+      "id": "teacher-1",
+      "nisOrEmail": "guru@almumtaz-ypii.sch.id",
+      "fullName": "Deni Santoso, M.M",
+      "className": "Guru",
+      "role": "teacher",
+      "avatarColor": "#047857",
+      "avatarIcon": "🧑‍🏫",
+      "createdAt": "2026-11-02T05:25:25.672Z",
+      "password": "guru"
+    }
+  ],
+  "scores": [],
+  "sessions": [
+    {
+      "code": "TIK701",
+      "title": "Balapan Cepat Bab Jaringan & Adab Digital",
+      "gameType": "racing",
+      "mode": "live",
+      "category": "tik",
+      "createdBy": "Deni Santoso, M.M",
+      "status": "active",
+      "targetClass": "Semua Kelas",
+      "createdAt": "2026-11-15T23:25:25.672Z",
+      "participants": []
+    },
+    {
+      "code": "PR0802",
+      "title": "Tugas Mandiri: Keamanan Siber & Wawasan Umum",
+      "gameType": "quiz",
+      "mode": "homework",
+      "category": "campuran",
+      "createdBy": "Deni Santoso, M.M",
+      "status": "active",
+      "targetClass": "VII-A & VII-B",
+      "createdAt": "2026-11-16T01:25:25.672Z",
+      "participants": []
+    }
+  ]
+}
