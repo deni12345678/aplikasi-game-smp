@@ -277,6 +277,13 @@ export function buildAnalytics(db: DatabaseSchema): AnalyticsSummary {
     avgScore: Math.round(data.sumScore / data.attempts),
   }));
 
+  const allUsers = db.users
+    .map(sanitizeUser)
+    .sort((a, b) => {
+      if (a.role !== b.role) return a.role === 'teacher' ? -1 : 1;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
   return {
     totalStudents: students.length,
     totalGamesPlayed,
@@ -287,6 +294,7 @@ export function buildAnalytics(db: DatabaseSchema): AnalyticsSummary {
     ),
     students,
     pendingStudents,
+    allUsers,
     customQuestions: db.customQuestions || [],
     sessions: db.sessions,
     leaderboard: buildLeaderboard(db, 'ALL', 100),
@@ -433,6 +441,167 @@ export function createAppRuntime(hooks: RuntimeHooks = {}): {
     saveDatabase(db);
     notifyDashboard();
     return res.json({ user: sanitizeUser(found) });
+  });
+
+  app.post('/api/users', (req, res) => {
+    const { nisOrEmail, fullName, className, role, password, avatarIcon, status } = req.body as {
+      nisOrEmail?: string;
+      fullName?: string;
+      className?: ClassRoom;
+      role?: 'student' | 'teacher';
+      password?: string;
+      avatarIcon?: string;
+      status?: AccountStatus;
+    };
+
+    if (!nisOrEmail?.trim() || !fullName?.trim() || !password?.trim()) {
+      return res.status(400).json({ error: 'Nama lengkap, NIS/email, dan kata sandi wajib diisi.' });
+    }
+    if (password.trim().length < 4) {
+      return res.status(400).json({ error: 'Kata sandi minimal 4 karakter.' });
+    }
+
+    const targetRole = role === 'teacher' ? 'teacher' : 'student';
+    const targetClass: ClassRoom =
+      targetRole === 'teacher' ? 'Guru' : className && className !== 'Guru' ? className : 'VII-A';
+
+    const normalized = nisOrEmail.trim().toLowerCase();
+    const duplicate = db.users.find((u) => u.nisOrEmail.toLowerCase() === normalized);
+    if (duplicate) {
+      return res.status(409).json({ error: 'NIS atau email tersebut sudah digunakan oleh akun lain.' });
+    }
+
+    const newUser: StoredUser = {
+      id: `${targetRole === 'teacher' ? 'teacher' : 'stu'}-${Date.now()}`,
+      nisOrEmail: nisOrEmail.trim(),
+      fullName: fullName.trim(),
+      className: targetClass,
+      role: targetRole,
+      avatarColor: AVATAR_COLORS[db.users.length % AVATAR_COLORS.length],
+      avatarIcon: avatarIcon?.trim() || (targetRole === 'teacher' ? '🧑‍🏫' : '🎓'),
+      status: status || 'approved',
+      createdAt: new Date().toISOString(),
+      password: password.trim(),
+    };
+
+    db.users.push(newUser);
+    saveDatabase(db);
+    notifyDashboard();
+    return res.status(201).json({ user: sanitizeUser(newUser) });
+  });
+
+  app.patch('/api/users/:id', (req, res) => {
+    const { id } = req.params;
+    const { nisOrEmail, fullName, className, role, status, password, avatarIcon } = req.body as {
+      nisOrEmail?: string;
+      fullName?: string;
+      className?: ClassRoom;
+      role?: 'student' | 'teacher';
+      status?: AccountStatus;
+      password?: string;
+      avatarIcon?: string;
+    };
+
+    const found = db.users.find((u) => u.id === id);
+    if (!found) {
+      return res.status(404).json({ error: 'Akun pengguna tidak ditemukan.' });
+    }
+
+    if (nisOrEmail !== undefined) {
+      const trimmed = nisOrEmail.trim();
+      if (!trimmed) {
+        return res.status(400).json({ error: 'NIS atau email tidak boleh kosong.' });
+      }
+      const normalized = trimmed.toLowerCase();
+      const duplicate = db.users.find(
+        (u) => u.id !== id && u.nisOrEmail.toLowerCase() === normalized
+      );
+      if (duplicate) {
+        return res.status(409).json({ error: 'NIS atau email sudah dipakai oleh akun lain.' });
+      }
+      found.nisOrEmail = trimmed;
+    }
+
+    if (fullName !== undefined) {
+      if (!fullName.trim()) {
+        return res.status(400).json({ error: 'Nama lengkap tidak boleh kosong.' });
+      }
+      found.fullName = fullName.trim();
+    }
+
+    if (role === 'student' || role === 'teacher') {
+      if (id === 'teacher-1' && role !== 'teacher') {
+        return res.status(400).json({ error: 'Akun admin utama tidak dapat diubah menjadi siswa.' });
+      }
+      found.role = role;
+      if (role === 'teacher') {
+        found.className = 'Guru';
+      } else if (className && className !== 'Guru') {
+        found.className = className;
+      } else if (found.className === 'Guru') {
+        found.className = 'VII-A';
+      }
+    } else if (className !== undefined && found.role === 'student' && className !== 'Guru') {
+      found.className = className;
+    }
+
+    if (status === 'approved' || status === 'pending' || status === 'rejected') {
+      if (id === 'teacher-1' && status !== 'approved') {
+        return res.status(400).json({ error: 'Akun admin utama harus tetap aktif.' });
+      }
+      found.status = status;
+    }
+
+    if (password !== undefined && password.trim().length > 0) {
+      if (password.trim().length < 4) {
+        return res.status(400).json({ error: 'Kata sandi baru minimal 4 karakter.' });
+      }
+      found.password = password.trim();
+    }
+
+    if (avatarIcon?.trim()) {
+      found.avatarIcon = avatarIcon.trim();
+    }
+
+    // Sync updated identity into active sessions
+    for (const sess of db.sessions) {
+      const pIdx = sess.participants.findIndex((p) => p.studentId === id);
+      if (pIdx !== -1) {
+        sess.participants[pIdx] = {
+          ...sess.participants[pIdx],
+          studentName: found.fullName,
+          className: found.className,
+          avatarIcon: found.avatarIcon,
+        };
+        notifyRoom(sess.code, sess);
+      }
+    }
+
+    saveDatabase(db);
+    notifyDashboard();
+    return res.json({ user: sanitizeUser(found) });
+  });
+
+  app.delete('/api/users/:id', (req, res) => {
+    const { id } = req.params;
+    if (id === 'teacher-1') {
+      return res.status(400).json({ error: 'Akun admin utama tidak dapat dihapus.' });
+    }
+    const idx = db.users.findIndex((u) => u.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Akun pengguna tidak ditemukan.' });
+    }
+    const [removed] = db.users.splice(idx, 1);
+    for (const sess of db.sessions) {
+      const before = sess.participants.length;
+      sess.participants = sess.participants.filter((p) => p.studentId !== id);
+      if (sess.participants.length !== before) {
+        notifyRoom(sess.code, sess);
+      }
+    }
+    saveDatabase(db);
+    notifyDashboard();
+    return res.json({ ok: true, deletedUser: sanitizeUser(removed) });
   });
 
   app.patch('/api/users/:id/avatar', (req, res) => {

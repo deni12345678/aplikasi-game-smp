@@ -582,7 +582,12 @@ export default function App() {
         ) : section === 'leaderboard' ? (
           <Leaderboard currentUser={user} />
         ) : section === 'teacher' && user?.role === 'teacher' ? (
-          <TeacherDashboard user={user} onLaunchGame={launchGame} onOpenLobby={openLobby} />
+          <TeacherDashboard
+            user={user}
+            onUserUpdate={handleUserUpdate}
+            onLaunchGame={launchGame}
+            onOpenLobby={openLobby}
+          />
         ) : section === 'classroom' && user ? (
           <StudentHub
             user={user}

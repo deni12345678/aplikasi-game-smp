@@ -27,10 +27,12 @@ import type {
   UserAccount,
 } from '../types';
 import { soundFx } from '../utils/sound';
+import { AccountManager } from './AccountManager';
 import { AvatarBadge } from './AvatarBadge';
 
 interface TeacherDashboardProps {
   user: UserAccount;
+  onUserUpdate?: (updated: UserAccount) => void;
   onLaunchGame?: (
     gameType: GameType,
     mode: SessionMode,
@@ -42,6 +44,7 @@ interface TeacherDashboardProps {
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   user,
+  onUserUpdate,
   onLaunchGame,
   onOpenLobby,
 }) => {
@@ -1244,6 +1247,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           </div>
         </div>
       </section>
+
+      {/* Manajemen Akun Pengguna (Siswa & Guru) */}
+      <AccountManager
+        currentUser={user}
+        users={analytics.allUsers || analytics.students}
+        leaderboard={analytics.leaderboard}
+        onRefresh={fetchAnalytics}
+        onUserUpdate={onUserUpdate}
+        onNotify={(msg) => setLiveNotification(msg)}
+      />
 
       {/* Score History Table */}
       <div className="rounded-xl border border-slate-200 bg-white p-6">

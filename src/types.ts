@@ -130,6 +130,7 @@ export interface AnalyticsSummary {
   recentScores: ScoreRecord[];
   students: UserAccount[];
   pendingStudents?: UserAccount[];
+  allUsers?: UserAccount[];
   customQuestions?: CustomQuestion[];
   sessions: GameSession[];
   leaderboard: LeaderboardEntry[];
