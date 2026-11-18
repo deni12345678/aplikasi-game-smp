@@ -16,6 +16,7 @@ import type {
   UserAccount,
 } from '../../types';
 import { soundFx } from '../../utils/sound';
+import { AvatarBadge } from '../AvatarBadge';
 import { LiveRoomStandings } from '../LiveRoomStandings';
 
 interface QuizGameProps {
@@ -213,6 +214,20 @@ export const QuizGame: React.FC<QuizGameProps> = ({
           </span>
           <span aria-hidden="true">·</span>
           <span>{mode === 'live' ? `Live Room ${roomCode || 'Kelas'}` : 'Mode Mandiri'}</span>
+          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs">
+            <AvatarBadge
+              photo={user.avatarPhoto}
+              icon={user.avatarIcon}
+              fallbackText={user.fullName[0]?.toUpperCase() || '🎓'}
+              color={user.avatarColor}
+              alt={user.fullName}
+              sizeClass="h-6 w-6"
+              textClass="text-xs"
+              roundedClass="rounded-md"
+            />
+            <span className="font-semibold text-slate-800">{user.fullName.split(' ')[0]}</span>
+            <span className="text-slate-400">· {user.className}</span>
+          </div>
         </div>
       </div>
 
@@ -251,10 +266,22 @@ export const QuizGame: React.FC<QuizGameProps> = ({
               </p>
             </div>
             <div>
-              <p className="text-xs text-slate-500">Pemain</p>
-              <p className="mt-1 text-base font-semibold text-slate-900">
-                {user.fullName} · {user.className}
-              </p>
+              <p className="text-xs text-slate-500">Avatar & Pemain</p>
+              <div className="mt-1 flex items-center gap-2.5 text-base font-semibold text-slate-900">
+                <AvatarBadge
+                  photo={user.avatarPhoto}
+                  icon={user.avatarIcon}
+                  fallbackText={user.fullName[0]?.toUpperCase() || '🎓'}
+                  color={user.avatarColor}
+                  alt={user.fullName}
+                  sizeClass="h-8 w-8"
+                  textClass="text-sm"
+                  roundedClass="rounded-lg"
+                />
+                <span>
+                  {user.fullName} · {user.className}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -393,11 +420,27 @@ export const QuizGame: React.FC<QuizGameProps> = ({
 
       {phase === 'summary' && (
         <div className="rounded-xl border border-slate-200 bg-white p-8">
-          <p className="text-xs font-semibold text-emerald-700">Sesi Selesai</p>
-          <h2 className="mt-1 text-2xl font-bold text-slate-900">
-            Alhamdulillah, Quiz Diselesaikan
-          </h2>
-          <p className="mt-1 text-sm text-slate-600">
+          <div className="flex flex-wrap items-center gap-4">
+            <AvatarBadge
+              photo={user.avatarPhoto}
+              icon={user.avatarIcon}
+              fallbackText={user.fullName[0]?.toUpperCase() || '🎓'}
+              color={user.avatarColor}
+              alt={user.fullName}
+              sizeClass="h-12 w-12"
+              textClass="text-xl"
+              roundedClass="rounded-xl"
+            />
+            <div>
+              <p className="text-xs font-semibold text-emerald-700">
+                Sesi Selesai · {user.fullName} ({user.className})
+              </p>
+              <h2 className="mt-0.5 text-2xl font-bold text-slate-900">
+                Alhamdulillah, Quiz Diselesaikan
+              </h2>
+            </div>
+          </div>
+          <p className="mt-2 text-sm text-slate-600">
             {saving
               ? 'Menyimpan skor dan analisis jawaban ke Dasbor Guru...'
               : 'Skor dan analisis jawaban telah tersimpan secara real-time di Dasbor Guru.'}

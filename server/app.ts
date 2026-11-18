@@ -658,9 +658,27 @@ export function createAppRuntime(hooks: RuntimeHooks = {}): {
       if (existingIdx === -1) {
         session.participants.push(participant);
       } else {
+        const prev = session.participants[existingIdx];
         session.participants[existingIdx] = {
-          ...session.participants[existingIdx],
-          ...participant,
+          ...prev,
+          studentName: participant.studentName || prev.studentName,
+          className: participant.className || prev.className,
+          carColor: participant.carColor || prev.carColor,
+          avatarIcon: participant.avatarIcon || prev.avatarIcon,
+          avatarPhoto:
+            participant.avatarPhoto !== undefined ? participant.avatarPhoto : prev.avatarPhoto,
+          progress: Math.max(prev.progress || 0, participant.progress || 0),
+          speedKmh: prev.speedKmh || participant.speedKmh,
+          score: Math.max(prev.score || 0, participant.score || 0),
+          streak: Math.max(prev.streak || 0, participant.streak || 0),
+          statusEffect:
+            prev.statusEffect && prev.statusEffect !== 'normal'
+              ? prev.statusEffect
+              : participant.statusEffect,
+          finishedAt: prev.finishedAt ?? participant.finishedAt,
+          cameraActive: participant.cameraActive ?? prev.cameraActive,
+          cameraFrame: participant.cameraFrame ?? prev.cameraFrame,
+          cameraUpdatedAt: participant.cameraUpdatedAt ?? prev.cameraUpdatedAt,
         };
       }
       saveDatabase(db);
@@ -693,6 +711,41 @@ export function createAppRuntime(hooks: RuntimeHooks = {}): {
         notifyRoom(code, session);
         notifyDashboard();
       }
+    }
+    return res.json({ session });
+  });
+
+  app.post('/api/sessions/:code/camera', (req, res) => {
+    const code = req.params.code.toUpperCase();
+    const session = db.sessions.find((s) => s.code === code);
+    if (!session) {
+      return res.status(404).json({ error: 'Kode room tidak ditemukan.' });
+    }
+    const { studentId, cameraActive, cameraFrame } = req.body as {
+      studentId?: string;
+      cameraActive?: boolean;
+      cameraFrame?: string;
+    };
+    if (!studentId) {
+      return res.status(400).json({ error: 'studentId wajib diisi.' });
+    }
+    if (
+      typeof cameraFrame === 'string' &&
+      (!cameraFrame.startsWith('data:image/jpeg;base64,') || cameraFrame.length > 55_000)
+    ) {
+      return res.status(400).json({ error: 'Format atau ukuran frame kamera tidak valid.' });
+    }
+    const idx = session.participants.findIndex((p) => p.studentId === studentId);
+    if (idx !== -1) {
+      session.participants[idx] = {
+        ...session.participants[idx],
+        cameraActive: Boolean(cameraActive),
+        cameraFrame: cameraActive ? cameraFrame ?? session.participants[idx].cameraFrame : undefined,
+        cameraUpdatedAt: Date.now(),
+      };
+      saveDatabase(db);
+      notifyRoom(code, session);
+      notifyDashboard();
     }
     return res.json({ session });
   });

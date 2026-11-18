@@ -10,6 +10,7 @@ import {
 import { useRoomSync } from '../../hooks/useRoomSync';
 import type { AnswerDetail, CrosswordWord, ScoreRecord, SessionMode, UserAccount } from '../../types';
 import { soundFx } from '../../utils/sound';
+import { AvatarBadge } from '../AvatarBadge';
 import { LiveRoomStandings } from '../LiveRoomStandings';
 
 interface PuzzleGameProps {
@@ -609,6 +610,20 @@ export const PuzzleGame: React.FC<PuzzleGameProps> = ({
         </button>
 
         <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs">
+            <AvatarBadge
+              photo={user.avatarPhoto}
+              icon={user.avatarIcon}
+              fallbackText={user.fullName[0]?.toUpperCase() || '🎓'}
+              color={user.avatarColor}
+              alt={user.fullName}
+              sizeClass="h-6 w-6"
+              textClass="text-xs"
+              roundedClass="rounded-md"
+            />
+            <span className="font-semibold text-slate-800">{user.fullName.split(' ')[0]}</span>
+            <span className="text-slate-400">· {user.className}</span>
+          </div>
           <span className="font-mono text-xs font-semibold text-emerald-700">
             Paket #{variantCode}
           </span>

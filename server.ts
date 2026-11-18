@@ -77,13 +77,59 @@ async function startServer() {
             if (existingIdx === -1) {
               session.participants.push(p);
             } else {
-              session.participants[existingIdx] = { ...session.participants[existingIdx], ...p };
+              const prev = session.participants[existingIdx];
+              session.participants[existingIdx] = {
+                ...prev,
+                studentName: p.studentName || prev.studentName,
+                className: p.className || prev.className,
+                carColor: p.carColor || prev.carColor,
+                avatarIcon: p.avatarIcon || prev.avatarIcon,
+                avatarPhoto: p.avatarPhoto !== undefined ? p.avatarPhoto : prev.avatarPhoto,
+                progress: Math.max(prev.progress || 0, p.progress || 0),
+                speedKmh: prev.speedKmh || p.speedKmh,
+                score: Math.max(prev.score || 0, p.score || 0),
+                streak: Math.max(prev.streak || 0, p.streak || 0),
+                statusEffect:
+                  prev.statusEffect && prev.statusEffect !== 'normal'
+                    ? prev.statusEffect
+                    : p.statusEffect,
+                finishedAt: prev.finishedAt ?? p.finishedAt,
+                cameraActive: p.cameraActive ?? prev.cameraActive,
+                cameraFrame: p.cameraFrame ?? prev.cameraFrame,
+                cameraUpdatedAt: p.cameraUpdatedAt ?? prev.cameraUpdatedAt,
+              };
             }
             saveDatabase(db);
             broadcastToRoom(code, 'room:state', session);
             broadcastToDashboard('dashboard:update', buildAnalytics(db));
           } else if (session) {
             ws.send(JSON.stringify({ event: 'room:state', payload: session }));
+          }
+        }
+
+        if (event === 'room:camera_frame' && payload?.code && payload?.studentId) {
+          const code = String(payload.code).toUpperCase();
+          const session = db.sessions.find((s) => s.code === code);
+          if (session) {
+            const frame =
+              typeof payload.cameraFrame === 'string' &&
+              payload.cameraFrame.startsWith('data:image/jpeg;base64,') &&
+              payload.cameraFrame.length <= 55_000
+                ? payload.cameraFrame
+                : undefined;
+            const idx = session.participants.findIndex((p) => p.studentId === payload.studentId);
+            if (idx !== -1) {
+              session.participants[idx] = {
+                ...session.participants[idx],
+                cameraActive: Boolean(payload.cameraActive),
+                cameraFrame: payload.cameraActive
+                  ? frame ?? session.participants[idx].cameraFrame
+                  : undefined,
+                cameraUpdatedAt: Date.now(),
+              };
+              broadcastToRoom(code, 'room:state', session);
+              broadcastToDashboard('dashboard:update', buildAnalytics(db));
+            }
           }
         }
 

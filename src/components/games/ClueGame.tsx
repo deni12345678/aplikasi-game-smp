@@ -16,6 +16,7 @@ import type {
   UserAccount,
 } from '../../types';
 import { soundFx } from '../../utils/sound';
+import { AvatarBadge } from '../AvatarBadge';
 import { LiveRoomStandings } from '../LiveRoomStandings';
 
 interface ClueGameProps {
@@ -239,6 +240,20 @@ export const ClueGame: React.FC<ClueGameProps> = ({
           <span>Kartu {cardIdx + 1}/{cards.length}</span>
           <span aria-hidden="true">·</span>
           <span>{roomCode ? `Live Room ${roomCode.toUpperCase()}` : mode === 'live' ? 'Live Kelas' : 'Mode Mandiri'}</span>
+          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs">
+            <AvatarBadge
+              photo={user.avatarPhoto}
+              icon={user.avatarIcon}
+              fallbackText={user.fullName[0]?.toUpperCase() || '🎓'}
+              color={user.avatarColor}
+              alt={user.fullName}
+              sizeClass="h-6 w-6"
+              textClass="text-xs"
+              roundedClass="rounded-md"
+            />
+            <span className="font-semibold text-slate-800">{user.fullName.split(' ')[0]}</span>
+            <span className="text-slate-400">· {user.className}</span>
+          </div>
         </div>
       </div>
 
@@ -355,9 +370,25 @@ export const ClueGame: React.FC<ClueGameProps> = ({
 
       {phase === 'summary' && (
         <div className="rounded-xl border border-slate-200 bg-white p-8">
-          <p className="text-xs font-semibold text-emerald-700">Flashcard Clue Selesai</p>
-          <h2 className="mt-1 text-2xl font-bold text-slate-900">Hasil Tebak Clue Digital</h2>
-          <p className="mt-1 text-sm text-slate-600">
+          <div className="flex flex-wrap items-center gap-4">
+            <AvatarBadge
+              photo={user.avatarPhoto}
+              icon={user.avatarIcon}
+              fallbackText={user.fullName[0]?.toUpperCase() || '🎓'}
+              color={user.avatarColor}
+              alt={user.fullName}
+              sizeClass="h-12 w-12"
+              textClass="text-xl"
+              roundedClass="rounded-xl"
+            />
+            <div>
+              <p className="text-xs font-semibold text-emerald-700">
+                Flashcard Clue Selesai · {user.fullName} ({user.className})
+              </p>
+              <h2 className="mt-0.5 text-2xl font-bold text-slate-900">Hasil Tebak Clue Digital</h2>
+            </div>
+          </div>
+          <p className="mt-2 text-sm text-slate-600">
             {saving ? 'Menyimpan hasil...' : 'Hasil tersimpan secara real-time di Dasbor Guru.'}
           </p>
 

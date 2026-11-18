@@ -640,18 +640,23 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
         </div>
       )}
 
-      {/* Live Participant Grid */}
+      {/* Live Participant Grid with Real-Time Cameras */}
       <div className="rounded-xl border border-slate-200 bg-white p-6">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-4">
           <div className="flex items-center gap-2">
             <Users className="h-5 w-5 text-emerald-700" />
             <h2 className="text-lg font-bold text-slate-900">
               Peserta di Ruang Tunggu ({session.participants.length})
             </h2>
           </div>
-          <span className="text-xs text-slate-500">
-            Ikon pemain tampil langsung saat bergabung
-          </span>
+          <div className="flex items-center gap-3 text-xs">
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-800">
+              <Camera className="h-3.5 w-3.5" />
+              On Camera: {session.participants.filter((p) => p.cameraActive).length}/
+              {session.participants.length}
+            </span>
+            <span className="text-slate-500">Wajib On Camera Real-Time</span>
+          </div>
         </div>
 
         {session.participants.length === 0 ? (
@@ -663,26 +668,60 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
             {session.participants.map((p) => {
               const isMe = p.studentId === user.id;
+              const camReady = Boolean(p.cameraActive && p.cameraFrame);
               return (
                 <div
                   key={p.studentId}
-                  className={`flex items-center gap-3 rounded-lg border p-3.5 ${
-                    isMe ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-200 bg-slate-50/60'
+                  className={`overflow-hidden rounded-xl border ${
+                    isMe ? 'border-emerald-400 bg-emerald-50/40' : 'border-slate-200 bg-slate-50/60'
                   }`}
                 >
-                  <AvatarBadge
-                    photo={p.avatarPhoto}
-                    icon={p.avatarIcon}
-                    color={p.carColor || '#047857'}
-                    alt={p.studentName}
-                    sizeClass="h-10 w-10"
-                    textClass="text-xl"
-                  />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-bold text-slate-900">
-                      {p.studentName} {isMe ? '(Kamu)' : ''}
-                    </p>
-                    <p className="text-xs text-slate-500">Kelas {p.className}</p>
+                  <div className="relative aspect-4/3 w-full bg-slate-900">
+                    {camReady ? (
+                      <img
+                        src={p.cameraFrame}
+                        alt={`Kamera ${p.studentName}`}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 text-slate-400">
+                        <AvatarBadge
+                          photo={p.avatarPhoto}
+                          icon={p.avatarIcon}
+                          color={p.carColor || '#047857'}
+                          alt={p.studentName}
+                          sizeClass="h-12 w-12"
+                          textClass="text-2xl"
+                        />
+                        <span className="text-[11px] font-medium">Menunggu Kamera...</span>
+                      </div>
+                    )}
+                    <span
+                      className={`absolute top-2 left-2 inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold ${
+                        p.cameraActive
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-slate-800/90 text-slate-300'
+                      }`}
+                    >
+                      <Camera className="h-2.5 w-2.5" />
+                      {p.cameraActive ? 'ON CAM' : 'OFF'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2.5 p-3">
+                    <AvatarBadge
+                      photo={p.avatarPhoto}
+                      icon={p.avatarIcon}
+                      color={p.carColor || '#047857'}
+                      alt={p.studentName}
+                      sizeClass="h-8 w-8"
+                      textClass="text-sm"
+                    />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-slate-900">
+                        {p.studentName} {isMe ? '(Kamu)' : ''}
+                      </p>
+                      <p className="text-xs text-slate-500">Kelas {p.className}</p>
+                    </div>
                   </div>
                 </div>
               );

@@ -19,6 +19,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { useRoomSync } from '../../hooks/useRoomSync';
 import type { LiveRaceParticipant, SessionMode, UserAccount } from '../../types';
 import { soundFx } from '../../utils/sound';
+import { AvatarBadge } from '../AvatarBadge';
 import { LiveRoomStandings } from '../LiveRoomStandings';
 import { horseAudio } from './horse3d/audio';
 import {
@@ -52,6 +53,8 @@ interface RacerStandingsItem {
   finishTimeSec: number | null;
   speedKmh: number;
   accentHex: string;
+  avatarPhoto?: string;
+  avatarIcon?: string;
 }
 
 const AI_RIVAL_PRESETS = [
@@ -190,6 +193,7 @@ export const HorseRacingGame: React.FC<HorseRacingGameProps> = ({
   const [cameraPreset, setCameraPreset] = useState<CameraPreset>('chase');
   const [dockCollapsed, setDockCollapsed] = useState(false);
   const [jockeyAvatar, setJockeyAvatar] = useState<string>(user.avatarIcon || '🏇');
+  const [useStudentPhoto, setUseStudentPhoto] = useState<boolean>(Boolean(user.avatarPhoto));
   const jockeyAvatarOptions = useMemo(() => {
     const base = user.avatarIcon ? [user.avatarIcon, ...JOCKEY_AVATAR_PRESETS] : JOCKEY_AVATAR_PRESETS;
     return Array.from(new Set(base)).slice(0, 6);
@@ -230,15 +234,37 @@ export const HorseRacingGame: React.FC<HorseRacingGameProps> = ({
   const phaseRef = useRef<RacePhase>('ready');
   const cameraPresetRef = useRef<CameraPreset>('chase');
   const jockeyAvatarRef = useRef<string>(jockeyAvatar);
+  const useStudentPhotoRef = useRef<boolean>(useStudentPhoto);
+  const userPhotoRef = useRef<string | undefined>(user.avatarPhoto);
   const playerRigRef = useRef<HorseActorRig | null>(null);
   const peersRef = useRef<LiveRaceParticipant[]>([]);
   const sendProgressRef = useRef(sendProgress);
   const trackFeatures = useMemo(() => generateTrackFeatures(0), []);
 
+  useEffect(() => {
+    userPhotoRef.current = user.avatarPhoto;
+    if (user.avatarPhoto && useStudentPhotoRef.current) {
+      playerRigRef.current?.setAvatar(jockeyAvatarRef.current, user.avatarPhoto);
+    } else if (!user.avatarPhoto) {
+      useStudentPhotoRef.current = false;
+      setUseStudentPhoto(false);
+      playerRigRef.current?.setAvatar(jockeyAvatarRef.current, undefined);
+    }
+  }, [user.avatarPhoto]);
+
   const handleSelectJockeyAvatar = useCallback((icon: string) => {
     jockeyAvatarRef.current = icon;
+    useStudentPhotoRef.current = false;
+    setUseStudentPhoto(false);
     setJockeyAvatar(icon);
-    playerRigRef.current?.setAvatarIcon(icon);
+    playerRigRef.current?.setAvatar(icon, undefined);
+  }, []);
+
+  const handleSelectStudentPhoto = useCallback(() => {
+    if (!userPhotoRef.current) return;
+    useStudentPhotoRef.current = true;
+    setUseStudentPhoto(true);
+    playerRigRef.current?.setAvatar(jockeyAvatarRef.current, userPhotoRef.current);
   }, []);
 
   // Mutable 3D game physics state (never triggers React re-renders per frame)
@@ -604,6 +630,7 @@ export const HorseRacingGame: React.FC<HorseRacingGameProps> = ({
         silkHex: '#b91c1c',
         silkPattern: 'stripes',
         avatarIcon: jockeyAvatarRef.current,
+        avatarPhoto: useStudentPhotoRef.current ? userPhotoRef.current : undefined,
         isPlayer: true,
       },
       env.contactShadowTex
@@ -1046,6 +1073,7 @@ export const HorseRacingGame: React.FC<HorseRacingGameProps> = ({
               silkHex: p.carColor || palette.hex,
               silkPattern: palette.pattern,
               avatarIcon: p.avatarIcon || '🏇',
+              avatarPhoto: p.avatarPhoto,
               isPlayer: false,
             },
             env.contactShadowTex
@@ -1226,8 +1254,10 @@ export const HorseRacingGame: React.FC<HorseRacingGameProps> = ({
             finishTimeSec: sim.finishTimeSec,
             speedKmh,
             accentHex: '#dc2626',
+            avatarPhoto: userPhotoRef.current,
+            avatarIcon: jockeyAvatarRef.current,
           },
-          ...sim.aiRacers.map((ai) => ({
+          ...sim.aiRacers.map((ai, idx) => ({
             id: ai.id,
             name: ai.name,
             isPlayer: false,
@@ -1236,6 +1266,7 @@ export const HorseRacingGame: React.FC<HorseRacingGameProps> = ({
             finishTimeSec: ai.finishTimeSec,
             speedKmh: Math.round(ai.speedMps * 3.6),
             accentHex: ai.accentHex,
+            avatarIcon: AI_RIVAL_PRESETS[idx]?.avatarIcon || '🏇',
           })),
           ...activePeers.map((p, idx) => ({
             id: p.studentId,
@@ -1246,6 +1277,8 @@ export const HorseRacingGame: React.FC<HorseRacingGameProps> = ({
             finishTimeSec: p.finishedAt ? p.finishedAt : null,
             speedKmh: Math.round(p.speedKmh || 0),
             accentHex: p.carColor || PEER_COLORS[idx % PEER_COLORS.length].hex,
+            avatarPhoto: p.avatarPhoto,
+            avatarIcon: p.avatarIcon || '🏇',
           })),
         ].sort((a, b) => {
           if (a.finishTimeSec !== null && b.finishTimeSec !== null) {
@@ -1415,8 +1448,22 @@ export const HorseRacingGame: React.FC<HorseRacingGameProps> = ({
           </div>
         </div>
 
-        {/* Live Telemetry Readout */}
+        {/* Live Telemetry & Student Profile Readout */}
         <div className="flex flex-wrap items-center gap-3 font-mono text-xs">
+          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 font-sans">
+            <AvatarBadge
+              photo={user.avatarPhoto}
+              icon={user.avatarIcon}
+              fallbackText={user.fullName[0]?.toUpperCase() || '🎓'}
+              color={user.avatarColor}
+              alt={user.fullName}
+              sizeClass="h-6 w-6"
+              textClass="text-xs"
+              roundedClass="rounded-md"
+            />
+            <span className="font-semibold text-slate-800">{user.fullName.split(' ')[0]}</span>
+            <span className="text-slate-400">· {user.className}</span>
+          </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5">
             <span className="text-slate-500">Posisi: </span>
             <strong className="text-emerald-700">
@@ -1524,17 +1571,52 @@ export const HorseRacingGame: React.FC<HorseRacingGameProps> = ({
 
               <div className="mt-4 rounded-xl border border-slate-700 bg-slate-800/90 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-bold text-slate-200">
-                    Pilih Emblem Joki (Animasi Aktif Sesuai Kecepatan):
-                  </span>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-2.5">
+                    <AvatarBadge
+                      photo={user.avatarPhoto}
+                      icon={user.avatarIcon}
+                      fallbackText={user.fullName[0]?.toUpperCase() || '🎓'}
+                      color={user.avatarColor}
+                      alt={user.fullName}
+                      sizeClass="h-9 w-9"
+                      textClass="text-base"
+                      roundedClass="rounded-lg"
+                    />
+                    <div>
+                      <p className="text-xs font-bold text-white">
+                        {user.fullName} · {user.className}
+                      </p>
+                      <p className="text-[11px] text-slate-300">
+                        Emblem Joki (Animasi Aktif Sesuai Kecepatan):
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {user.avatarPhoto && (
+                      <button
+                        type="button"
+                        onClick={handleSelectStudentPhoto}
+                        className={`flex h-9 items-center gap-1.5 rounded-lg border px-2 text-xs font-bold transition-colors ${
+                          useStudentPhoto
+                            ? 'border-amber-400 bg-emerald-600 text-white shadow'
+                            : 'border-slate-600 bg-slate-900 text-slate-200 hover:border-slate-400'
+                        }`}
+                      >
+                        <img
+                          src={user.avatarPhoto}
+                          alt={user.fullName}
+                          className="h-6 w-6 rounded object-cover"
+                        />
+                        <span>Foto</span>
+                      </button>
+                    )}
                     {jockeyAvatarOptions.map((icon) => (
                       <button
                         key={icon}
                         type="button"
                         onClick={() => handleSelectJockeyAvatar(icon)}
                         className={`flex h-9 w-9 items-center justify-center rounded-lg border text-lg transition-colors ${
-                          jockeyAvatar === icon
+                          !useStudentPhoto && jockeyAvatar === icon
                             ? 'border-amber-400 bg-emerald-600 text-white shadow'
                             : 'border-slate-600 bg-slate-900 text-slate-200 hover:border-slate-400'
                         }`}
@@ -1651,9 +1733,14 @@ export const HorseRacingGame: React.FC<HorseRacingGameProps> = ({
                   >
                     <div className="flex items-center gap-2.5">
                       <span className="w-6 font-mono font-bold text-amber-300">#{idx + 1}</span>
-                      <span
-                        className="h-3 w-3 rounded-sm"
-                        style={{ backgroundColor: item.accentHex }}
+                      <AvatarBadge
+                        photo={item.avatarPhoto}
+                        icon={item.avatarIcon || '🏇'}
+                        color={item.accentHex}
+                        alt={item.name}
+                        sizeClass="h-6 w-6"
+                        textClass="text-xs"
+                        roundedClass="rounded-md"
                       />
                       <span>{item.name}</span>
                     </div>
@@ -1825,10 +1912,22 @@ export const HorseRacingGame: React.FC<HorseRacingGameProps> = ({
                   : 'border-slate-200 bg-white text-slate-700'
               }`}
             >
-              <div className="flex items-center justify-between gap-1">
-                <span className="truncate">
-                  #{idx + 1} {item.name}
-                </span>
+              <div className="flex items-center justify-between gap-1.5">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="font-mono text-[11px] font-bold text-slate-500">
+                    #{idx + 1}
+                  </span>
+                  <AvatarBadge
+                    photo={item.avatarPhoto}
+                    icon={item.avatarIcon || '🏇'}
+                    color={item.accentHex}
+                    alt={item.name}
+                    sizeClass="h-5 w-5"
+                    textClass="text-[11px]"
+                    roundedClass="rounded"
+                  />
+                  <span className="truncate">{item.name}</span>
+                </div>
                 <span className="font-mono text-[11px] font-bold tabular-nums">
                   {item.progressPct}%
                 </span>

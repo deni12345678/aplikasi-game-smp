@@ -30,7 +30,7 @@ export interface HorseActorRig {
   nameSprite: THREE.Sprite;
   avatarSprite: THREE.Sprite;
   avatarTexture: THREE.CanvasTexture;
-  setAvatarIcon: (icon: string) => void;
+  setAvatar: (icon: string, photo?: string) => void;
   dispose: () => void;
 }
 
@@ -43,6 +43,7 @@ export interface HorseRigStyle {
   accentHex: string;
   isPlayer: boolean;
   avatarIcon?: string;
+  avatarPhoto?: string;
   silkHex?: string;
   silkPattern?: JockeySilkPattern;
 }
@@ -413,12 +414,13 @@ export function createHorseAndJockey(
   // 9. Distinct 4-Frame Animated Jockey Avatar Sprite above nameplate
   const avatarHandle = createJockeyAvatarSpriteSheet({
     avatarIcon: style.avatarIcon || '🏇',
+    avatarPhoto: style.avatarPhoto,
     silkHex: style.silkHex || style.accentHex,
     accentHex: style.accentHex,
     pattern: style.silkPattern || 'stripes',
     isPlayer: style.isPlayer,
   });
-  disposables.push(avatarHandle.texture);
+  disposables.push(avatarHandle);
   const avatarMat = trackMat(
     new THREE.SpriteMaterial({
       map: avatarHandle.texture,
@@ -444,7 +446,7 @@ export function createHorseAndJockey(
     nameSprite,
     avatarSprite,
     avatarTexture: avatarHandle.texture,
-    setAvatarIcon: avatarHandle.redraw,
+    setAvatar: avatarHandle.redraw,
     dispose: () => {
       disposables.forEach((d) => d.dispose());
     },

@@ -390,11 +390,13 @@ export type JockeySilkPattern = 'stripes' | 'chevron' | 'diamonds' | 'stars' | '
 
 export interface JockeySpriteSheetHandle {
   texture: THREE.CanvasTexture;
-  redraw: (avatarIcon: string) => void;
+  redraw: (avatarIcon: string, avatarPhoto?: string) => void;
+  dispose: () => void;
 }
 
 export function createJockeyAvatarSpriteSheet(options: {
   avatarIcon: string;
+  avatarPhoto?: string;
   silkHex: string;
   accentHex: string;
   pattern: JockeySilkPattern;
@@ -404,8 +406,17 @@ export function createJockeyAvatarSpriteSheet(options: {
   const frameCount = 4;
   const [canvas, ctx] = makeCanvas(frameSize * frameCount, frameSize);
 
-  const renderFrames = (icon: string) => {
+  let disposed = false;
+  let currentIcon = options.avatarIcon || '🏇';
+  let currentPhotoUrl = options.avatarPhoto;
+  let loadedPhotoImg: HTMLImageElement | null = null;
+  let loadSeq = 0;
+
+  const renderFrames = (icon: string, photoImg: HTMLImageElement | null) => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const hasReadyPhoto =
+      photoImg !== null && photoImg.complete && photoImg.naturalWidth > 0 && photoImg.naturalHeight > 0;
 
     for (let f = 0; f < frameCount; f++) {
       const ox = f * frameSize;
@@ -508,6 +519,36 @@ export function createJockeyAvatarSpriteSheet(options: {
       }
       ctx.restore();
 
+      // Jockey student photo (circular cover-cropped) or emoji avatar centered inside medallion
+      if (hasReadyPhoto && photoImg) {
+        const radius = 32;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, 1, radius, 0, Math.PI * 2);
+        ctx.clip();
+
+        const iw = photoImg.naturalWidth;
+        const ih = photoImg.naturalHeight;
+        const targetSize = radius * 2;
+        const scale = Math.max(targetSize / iw, targetSize / ih);
+        const drawW = iw * scale;
+        const drawH = ih * scale;
+        ctx.drawImage(photoImg, -drawW / 2, 1 - drawH / 2, drawW, drawH);
+        ctx.restore();
+
+        // Crisp inner frame around photo
+        ctx.beginPath();
+        ctx.arc(0, 1, radius, 0, Math.PI * 2);
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = options.isPlayer ? '#fef08a' : '#ffffff';
+        ctx.stroke();
+      } else {
+        ctx.font = '38px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(icon || '🏇', 0, 3);
+      }
+
       // Racing helmet peak arc at top of medallion
       ctx.fillStyle = options.accentHex;
       ctx.beginPath();
@@ -515,12 +556,6 @@ export function createJockeyAvatarSpriteSheet(options: {
       ctx.lineWidth = 6;
       ctx.strokeStyle = options.isPlayer ? '#fef08a' : '#ffffff';
       ctx.stroke();
-
-      // Jockey avatar icon centered inside medallion
-      ctx.font = '38px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(icon || '🏇', 0, 3);
 
       // Kinetic sparkle dot on peak stride frames 1 & 2
       if (f === 1 || f === 2) {
@@ -534,7 +569,7 @@ export function createJockeyAvatarSpriteSheet(options: {
     }
   };
 
-  renderFrames(options.avatarIcon);
+  renderFrames(currentIcon, null);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -546,11 +581,55 @@ export function createJockeyAvatarSpriteSheet(options: {
   texture.generateMipmaps = false;
   texture.needsUpdate = true;
 
+  const loadAndDrawPhoto = (photoUrl?: string) => {
+    const seq = ++loadSeq;
+    currentPhotoUrl = photoUrl;
+    if (!photoUrl) {
+      loadedPhotoImg = null;
+      renderFrames(currentIcon, null);
+      texture.needsUpdate = true;
+      return;
+    }
+
+    const img = new Image();
+    if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
+      img.crossOrigin = 'anonymous';
+    }
+    img.onload = () => {
+      if (disposed || seq !== loadSeq) return;
+      loadedPhotoImg = img;
+      renderFrames(currentIcon, img);
+      texture.needsUpdate = true;
+    };
+    img.onerror = () => {
+      if (disposed || seq !== loadSeq) return;
+      loadedPhotoImg = null;
+      renderFrames(currentIcon, null);
+      texture.needsUpdate = true;
+    };
+    img.src = photoUrl;
+  };
+
+  if (options.avatarPhoto) {
+    loadAndDrawPhoto(options.avatarPhoto);
+  }
+
   return {
     texture,
-    redraw: (nextIcon: string) => {
-      renderFrames(nextIcon);
-      texture.needsUpdate = true;
+    redraw: (nextIcon: string, nextPhoto?: string) => {
+      currentIcon = nextIcon || '🏇';
+      if (nextPhoto !== currentPhotoUrl) {
+        loadAndDrawPhoto(nextPhoto);
+      } else {
+        renderFrames(currentIcon, loadedPhotoImg);
+        texture.needsUpdate = true;
+      }
+    },
+    dispose: () => {
+      disposed = true;
+      loadSeq += 1;
+      loadedPhotoImg = null;
+      texture.dispose();
     },
   };
 }

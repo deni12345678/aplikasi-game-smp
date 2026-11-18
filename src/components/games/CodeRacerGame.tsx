@@ -18,6 +18,7 @@ import type {
   UserAccount,
 } from '../../types';
 import { soundFx } from '../../utils/sound';
+import { AvatarBadge } from '../AvatarBadge';
 import { LiveRoomStandings } from '../LiveRoomStandings';
 
 interface CodeRacerGameProps {
@@ -656,6 +657,20 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
           <span className="font-mono font-bold text-emerald-700 tabular-nums">
             {visualProgress}% Garis Finis
           </span>
+          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs">
+            <AvatarBadge
+              photo={user.avatarPhoto}
+              icon={user.avatarIcon}
+              fallbackText={user.fullName[0]?.toUpperCase() || '🎓'}
+              color={user.avatarColor}
+              alt={user.fullName}
+              sizeClass="h-6 w-6"
+              textClass="text-xs"
+              roundedClass="rounded-md"
+            />
+            <span className="font-semibold text-slate-800">{user.fullName.split(' ')[0]}</span>
+            <span className="text-slate-400">· {user.className}</span>
+          </div>
         </div>
       </div>
 
@@ -774,15 +789,29 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
 
       {phase === 'finished' && (
         <div className="rounded-xl border border-slate-200 bg-white p-8">
-          <div className="flex items-center gap-2 text-amber-600">
-            <Trophy className="h-5 w-5" />
-            <span className="text-xs font-semibold">
-              {progress >= 100 ? 'Garis Finis Tercapai!' : '25 Tantangan Balapan Selesai'}
-            </span>
+          <div className="flex flex-wrap items-center gap-4">
+            <AvatarBadge
+              photo={user.avatarPhoto}
+              icon={user.avatarIcon}
+              fallbackText={user.fullName[0]?.toUpperCase() || '🎓'}
+              color={user.avatarColor}
+              alt={user.fullName}
+              sizeClass="h-12 w-12"
+              textClass="text-xl"
+              roundedClass="rounded-xl"
+            />
+            <div>
+              <div className="flex items-center gap-2 text-amber-600">
+                <Trophy className="h-4 w-4" />
+                <span className="text-xs font-semibold">
+                  {progress >= 100 ? 'Garis Finis Tercapai!' : '25 Tantangan Balapan Selesai'}
+                </span>
+              </div>
+              <h2 className="mt-0.5 text-2xl font-bold text-slate-900">
+                Balapan Selesai — {user.fullName} ({user.className})
+              </h2>
+            </div>
           </div>
-          <h2 className="mt-1 text-2xl font-bold text-slate-900">
-            Balapan Selesai — {user.fullName}
-          </h2>
           <p className="mt-1 text-sm text-slate-600">
             {saving
               ? 'Mengirim catatan waktu & kecepatan ke Dasbor Guru...'
