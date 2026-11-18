@@ -261,6 +261,24 @@ export default function App() {
   const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
+    if (!user) return;
+    fetch('/api/auth/sync-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { user?: UserAccount } | null) => {
+        if (data?.user) {
+          setUser(data.user);
+          localStorage.setItem('almumtaz_user', JSON.stringify(data.user));
+        }
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  useEffect(() => {
     if (user?.role !== 'teacher') {
       setPendingCount(0);
       return;

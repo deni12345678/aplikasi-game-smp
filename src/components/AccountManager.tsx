@@ -1,11 +1,14 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
+  Download,
   Edit3,
   KeyRound,
   Search,
   Shield,
+  ShieldCheck,
   Trash2,
+  Upload,
   UserCheck,
   UserPlus,
   Users,
@@ -77,6 +80,124 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null
   );
+  const [vaultSyncedCount, setVaultSyncedCount] = useState<number>(0);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+  const restoringVaultRef = useRef(false);
+  const lastSyncedSigRef = useRef<string>('');
+
+  const VAULT_STORAGE_KEY = 'almumtaz_admin_accounts_vault_v1';
+  const DELETED_IDS_KEY = 'almumtaz_admin_deleted_ids_v1';
+
+  const usersSignature = useMemo(
+    () =>
+      users
+        .map((u) => `${u.id}:${u.status || 'approved'}:${u.className}:${u.role}:${u.fullName}`)
+        .sort()
+        .join('|'),
+    [users]
+  );
+
+  // Auto-preserve & restore created/ACC'd accounts across server restarts or Vercel cold starts
+  useEffect(() => {
+    if (lastSyncedSigRef.current === usersSignature) return;
+    let cancelled = false;
+
+    async function syncAndPreserveAccounts() {
+      if (restoringVaultRef.current) return;
+      restoringVaultRef.current = true;
+      try {
+        let deletedIds: string[] = [];
+        try {
+          deletedIds = JSON.parse(localStorage.getItem(DELETED_IDS_KEY) || '[]') as string[];
+        } catch {
+          deletedIds = [];
+        }
+        const deletedSet = new Set(deletedIds);
+
+        let localVault: Array<Record<string, unknown>> = [];
+        try {
+          localVault = JSON.parse(localStorage.getItem(VAULT_STORAGE_KEY) || '[]') as Array<
+            Record<string, unknown>
+          >;
+        } catch {
+          localVault = [];
+        }
+
+        // 1. Restore any vaulted approved/created accounts that are missing on the server
+        const serverIds = new Set(users.map((u) => u.id));
+        const serverEmails = new Set(users.map((u) => u.nisOrEmail.toLowerCase()));
+        const missingFromServer = localVault.filter((item) => {
+          const id = String(item.id || '');
+          const email = String(item.nisOrEmail || '').toLowerCase();
+          if (!id || !email || deletedSet.has(id)) return false;
+          return !serverIds.has(id) && !serverEmails.has(email);
+        });
+
+        if (missingFromServer.length > 0) {
+          const restoreRes = await fetch('/api/users/restore', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-admin-id': currentUser.id,
+            },
+            body: JSON.stringify({ users: missingFromServer }),
+          });
+          if (restoreRes.ok && !cancelled) {
+            const restoreData = (await restoreRes.json()) as { restoredCount?: number };
+            if ((restoreData.restoredCount || 0) > 0) {
+              setFeedback({
+                type: 'success',
+                text: `${restoreData.restoredCount} akun yang sudah dibuat/ACC otomatis dipulihkan & dipertahankan ke server.`,
+              });
+              await onRefresh();
+              return;
+            }
+          }
+        }
+
+        // 2. Fetch full server backup (including passwords) & merge into local vault
+        const backupRes = await fetch('/api/users/backup', {
+          headers: { 'x-admin-id': currentUser.id },
+        });
+        if (backupRes.ok && !cancelled) {
+          const backupData = (await backupRes.json()) as {
+            users?: Array<Record<string, unknown>>;
+          };
+          const serverFull = backupData.users || [];
+          const mergedMap = new Map<string, Record<string, unknown>>();
+
+          for (const v of localVault) {
+            const id = String(v.id || '');
+            if (id && !deletedSet.has(id)) {
+              mergedMap.set(id, v);
+            }
+          }
+          for (const s of serverFull) {
+            const id = String(s.id || '');
+            if (id) {
+              deletedSet.delete(id);
+              mergedMap.set(id, s);
+            }
+          }
+
+          const mergedList = Array.from(mergedMap.values());
+          localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(mergedList));
+          localStorage.setItem(DELETED_IDS_KEY, JSON.stringify(Array.from(deletedSet)));
+          lastSyncedSigRef.current = usersSignature;
+          setVaultSyncedCount(mergedList.length);
+        }
+      } catch {
+        // Ignore transient network errors
+      } finally {
+        restoringVaultRef.current = false;
+      }
+    }
+
+    syncAndPreserveAccounts();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser.id, users, usersSignature, onRefresh]);
 
   const statsMap = useMemo(() => {
     const map = new Map<string, LeaderboardEntry>();
@@ -261,6 +382,23 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
         return;
       }
       soundFx.click();
+      // Record deliberate deletion so auto-preserve does not re-create deleted account
+      try {
+        const deletedIds = JSON.parse(localStorage.getItem(DELETED_IDS_KEY) || '[]') as string[];
+        if (!deletedIds.includes(target.id)) {
+          deletedIds.push(target.id);
+          localStorage.setItem(DELETED_IDS_KEY, JSON.stringify(deletedIds));
+        }
+        const localVault = JSON.parse(localStorage.getItem(VAULT_STORAGE_KEY) || '[]') as Array<{
+          id?: string;
+        }>;
+        localStorage.setItem(
+          VAULT_STORAGE_KEY,
+          JSON.stringify(localVault.filter((v) => v.id !== target.id))
+        );
+      } catch {
+        // Ignore storage errors
+      }
       setConfirmDeleteId(null);
       const msg = `Akun ${target.fullName} (${target.nisOrEmail}) telah dihapus dari sistem.`;
       setFeedback({ type: 'success', text: msg });
@@ -268,6 +406,72 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
       await onRefresh();
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function handleExportAccountsBackup() {
+    try {
+      const res = await fetch('/api/users/backup', {
+        headers: { 'x-admin-id': currentUser.id },
+      });
+      if (!res.ok) {
+        setFeedback({ type: 'error', text: 'Gagal mengunduh cadangan akun.' });
+        return;
+      }
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cadangan-akun-almumtaz-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      soundFx.click();
+      setFeedback({
+        type: 'success',
+        text: `File cadangan berisi ${(data.users || []).length} akun berhasil diunduh.`,
+      });
+    } catch {
+      setFeedback({ type: 'error', text: 'Gagal mengekspor cadangan akun.' });
+    }
+  }
+
+  async function handleImportAccountsBackup(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as { users?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
+      const list = Array.isArray(parsed) ? parsed : parsed.users;
+      if (!Array.isArray(list)) {
+        setFeedback({ type: 'error', text: 'Format file cadangan JSON tidak valid.' });
+        return;
+      }
+      const res = await fetch('/api/users/restore', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-id': currentUser.id,
+        },
+        body: JSON.stringify({ users: list }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setFeedback({ type: 'error', text: data.error || 'Gagal memulihkan file cadangan.' });
+        soundFx.wrong();
+        return;
+      }
+      soundFx.correct();
+      const msg = `Pemulihan selesai: ${data.restoredCount || 0} akun ditambahkan & ${data.upgradedCount || 0} status ACC dipulihkan.`;
+      setFeedback({ type: 'success', text: msg });
+      onNotify?.(msg);
+      await onRefresh();
+    } catch {
+      setFeedback({ type: 'error', text: 'File cadangan tidak dapat dibaca.' });
+    } finally {
+      if (importInputRef.current) importInputRef.current.value = '';
     }
   }
 
@@ -296,22 +500,58 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
               <span className="text-red-700 font-semibold">{counts.rejected} Ditolak</span>
               <span aria-hidden="true">·</span>
               <span>{counts.teachers} Guru/Admin</span>
+              {vaultSyncedCount > 0 && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="inline-flex items-center gap-1 font-sans text-emerald-700 font-semibold">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    {vaultSyncedCount} Akun Terlindungi Cadangan
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            soundFx.click();
-            setCreateError('');
-            setCreateOpen(true);
-          }}
-          className="inline-flex min-h-[40px] items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-800 whitespace-nowrap shrink-0"
-        >
-          <UserPlus className="h-4 w-4" />
-          Tambah Akun Baru
-        </button>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={handleImportAccountsBackup}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={handleExportAccountsBackup}
+            title="Simpan salinan permanen seluruh akun ke file JSON"
+            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 whitespace-nowrap"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Cadangkan Akun
+          </button>
+          <button
+            type="button"
+            onClick={() => importInputRef.current?.click()}
+            title="Pulihkan akun dari file cadangan JSON"
+            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 whitespace-nowrap"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Pulihkan
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              soundFx.click();
+              setCreateError('');
+              setCreateOpen(true);
+            }}
+            className="inline-flex min-h-[40px] items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-800 whitespace-nowrap"
+          >
+            <UserPlus className="h-4 w-4" />
+            Tambah Akun Baru
+          </button>
+        </div>
       </div>
 
       {/* Action Feedback Banner */}

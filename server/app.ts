@@ -33,10 +33,13 @@ export interface RuntimeHooks {
   onDashboardUpdate?: (analytics: AnalyticsSummary) => void;
 }
 
+const BUNDLED_DB_PATH = path.resolve(process.cwd(), 'data', 'db.json');
 const DATA_DIR = process.env.VERCEL
   ? path.join('/tmp', 'almumtaz-data')
   : path.resolve(process.cwd(), 'data');
 const DB_PATH = path.join(DATA_DIR, 'db.json');
+const DB_BACKUP_PATH = path.join(DATA_DIR, 'db.backup.json');
+const DB_TMP_PATH = path.join(DATA_DIR, 'db.tmp.json');
 
 const AVATAR_COLORS = ['#047857', '#0284C7', '#D97706', '#7C3AED', '#DC2626', '#0D9488'];
 
@@ -93,25 +96,52 @@ export function createSeedDatabase(): DatabaseSchema {
   return { users, scores, sessions, customQuestions: [] };
 }
 
+function tryReadDatabaseFile(filePath: string): DatabaseSchema | null {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    const parsed = JSON.parse(raw) as DatabaseSchema;
+    if (!Array.isArray(parsed.users) || !Array.isArray(parsed.scores) || !Array.isArray(parsed.sessions)) {
+      return null;
+    }
+    if (!Array.isArray(parsed.customQuestions)) {
+      parsed.customQuestions = [];
+    }
+    // Always guarantee primary admin account is preserved
+    const seed = createSeedDatabase();
+    if (!parsed.users.some((u) => u.id === 'teacher-1')) {
+      parsed.users.unshift(seed.users[0]);
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 export function loadDatabase(): DatabaseSchema {
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
-    if (!fs.existsSync(DB_PATH)) {
-      const seed = createSeedDatabase();
-      fs.writeFileSync(DB_PATH, JSON.stringify(seed, null, 2), 'utf-8');
-      return seed;
+    const primary = tryReadDatabaseFile(DB_PATH);
+    if (primary) return primary;
+
+    const backup = tryReadDatabaseFile(DB_BACKUP_PATH);
+    if (backup) {
+      saveDatabase(backup);
+      return backup;
     }
-    const raw = fs.readFileSync(DB_PATH, 'utf-8');
-    const parsed = JSON.parse(raw) as DatabaseSchema;
-    if (!parsed.users || !parsed.scores || !parsed.sessions) {
-      throw new Error('Malformed DB');
+
+    // On serverless cold starts (/tmp empty), seed from bundled data/db.json first if present
+    const bundled = BUNDLED_DB_PATH !== DB_PATH ? tryReadDatabaseFile(BUNDLED_DB_PATH) : null;
+    if (bundled) {
+      saveDatabase(bundled);
+      return bundled;
     }
-    if (!Array.isArray(parsed.customQuestions)) {
-      parsed.customQuestions = [];
-    }
-    return parsed;
+
+    const seed = createSeedDatabase();
+    saveDatabase(seed);
+    return seed;
   } catch {
     return createSeedDatabase();
   }
@@ -122,7 +152,10 @@ export function saveDatabase(db: DatabaseSchema) {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
-    fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2), 'utf-8');
+    const serialized = JSON.stringify(db, null, 2);
+    fs.writeFileSync(DB_TMP_PATH, serialized, 'utf-8');
+    fs.renameSync(DB_TMP_PATH, DB_PATH);
+    fs.writeFileSync(DB_BACKUP_PATH, serialized, 'utf-8');
   } catch {
     // Graceful fallback if filesystem is read-only
   }
@@ -425,6 +458,128 @@ export function createAppRuntime(hooks: RuntimeHooks = {}): {
     }
 
     return res.json({ user: sanitizeUser(found) });
+  });
+
+  // Keep approved logged-in session alive across serverless cold starts
+  app.post('/api/auth/sync-session', (req, res) => {
+    const { user: clientUser } = req.body as { user?: UserAccount };
+    if (!clientUser?.id || !clientUser?.nisOrEmail || !clientUser?.fullName) {
+      return res.status(400).json({ error: 'Data sesi pengguna tidak lengkap.' });
+    }
+
+    const existing = db.users.find(
+      (u) =>
+        u.id === clientUser.id ||
+        u.nisOrEmail.toLowerCase() === clientUser.nisOrEmail.trim().toLowerCase()
+    );
+    if (existing) {
+      return res.json({ user: sanitizeUser(existing), restored: false });
+    }
+
+    // Only auto-restore accounts that were already approved (ACC)
+    if ((clientUser.status || 'approved') !== 'approved') {
+      return res.status(404).json({ error: 'Akun belum disetujui.' });
+    }
+
+    const restoredUser: StoredUser = {
+      id: clientUser.id,
+      nisOrEmail: clientUser.nisOrEmail.trim(),
+      fullName: clientUser.fullName.trim(),
+      className: clientUser.className || (clientUser.role === 'teacher' ? 'Guru' : 'VII-A'),
+      role: clientUser.role === 'teacher' ? 'teacher' : 'student',
+      avatarColor: clientUser.avatarColor || AVATAR_COLORS[db.users.length % AVATAR_COLORS.length],
+      avatarIcon: clientUser.avatarIcon || (clientUser.role === 'teacher' ? '🧑‍🏫' : '🎓'),
+      ...(clientUser.avatarPhoto ? { avatarPhoto: clientUser.avatarPhoto } : {}),
+      status: 'approved',
+      createdAt: clientUser.createdAt || new Date().toISOString(),
+      password: clientUser.role === 'teacher' ? 'guru' : '1234',
+    };
+
+    db.users.push(restoredUser);
+    saveDatabase(db);
+    notifyDashboard();
+    return res.json({ user: sanitizeUser(restoredUser), restored: true });
+  });
+
+  app.get('/api/users/backup', (req, res) => {
+    const adminId = String(req.headers['x-admin-id'] || '');
+    const admin = db.users.find((u) => u.id === adminId && u.role === 'teacher');
+    if (!admin) {
+      return res.status(403).json({ error: 'Akses cadangan akun hanya untuk Guru/Admin.' });
+    }
+    return res.json({
+      exportedAt: new Date().toISOString(),
+      users: db.users,
+    });
+  });
+
+  app.post('/api/users/restore', (req, res) => {
+    const adminId = String(req.headers['x-admin-id'] || '');
+    const admin = db.users.find((u) => u.id === adminId && u.role === 'teacher');
+    if (!admin) {
+      return res.status(403).json({ error: 'Akses pemulihan akun hanya untuk Guru/Admin.' });
+    }
+
+    const { users: incomingUsers } = req.body as { users?: Array<Partial<StoredUser>> };
+    if (!Array.isArray(incomingUsers)) {
+      return res.status(400).json({ error: 'Format daftar akun cadangan tidak valid.' });
+    }
+
+    let restoredCount = 0;
+    let upgradedCount = 0;
+
+    for (const item of incomingUsers) {
+      if (!item?.id || !item?.nisOrEmail?.trim() || !item?.fullName?.trim()) continue;
+      const normalized = item.nisOrEmail.trim().toLowerCase();
+      const existing = db.users.find(
+        (u) => u.id === item.id || u.nisOrEmail.toLowerCase() === normalized
+      );
+
+      if (!existing) {
+        const role = item.role === 'teacher' ? 'teacher' : 'student';
+        const restored: StoredUser = {
+          id: item.id,
+          nisOrEmail: item.nisOrEmail.trim(),
+          fullName: item.fullName.trim(),
+          className:
+            role === 'teacher'
+              ? 'Guru'
+              : item.className && item.className !== 'Guru'
+              ? item.className
+              : 'VII-A',
+          role,
+          avatarColor: item.avatarColor || AVATAR_COLORS[db.users.length % AVATAR_COLORS.length],
+          avatarIcon: item.avatarIcon || (role === 'teacher' ? '🧑‍🏫' : '🎓'),
+          ...(item.avatarPhoto ? { avatarPhoto: item.avatarPhoto } : {}),
+          status: item.status || 'approved',
+          createdAt: item.createdAt || new Date().toISOString(),
+          password: item.password?.trim() || (role === 'teacher' ? 'guru' : '1234'),
+        };
+        db.users.push(restored);
+        restoredCount++;
+      } else {
+        // Preserve already-approved status and preserve password if missing on existing
+        if (item.status === 'approved' && existing.status !== 'approved') {
+          existing.status = 'approved';
+          upgradedCount++;
+        }
+        if (!existing.avatarPhoto && item.avatarPhoto) {
+          existing.avatarPhoto = item.avatarPhoto;
+        }
+      }
+    }
+
+    if (restoredCount > 0 || upgradedCount > 0) {
+      saveDatabase(db);
+      notifyDashboard();
+    }
+
+    return res.json({
+      ok: true,
+      restoredCount,
+      upgradedCount,
+      totalUsers: db.users.length,
+    });
   });
 
   app.patch('/api/users/:id/approval', (req, res) => {
