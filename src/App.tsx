@@ -19,7 +19,6 @@ import { PuzzleGame } from './components/games/PuzzleGame';
 import { QuizGame } from './components/games/QuizGame';
 import { Leaderboard } from './components/Leaderboard';
 import { LobbyRoom } from './components/LobbyRoom';
-import { MandatoryCameraGate } from './components/MandatoryCameraGate';
 import { StudentHub } from './components/StudentHub';
 import { TeacherDashboard } from './components/TeacherDashboard';
 import { GAME_META } from './data/tikCurriculum';
@@ -514,89 +513,72 @@ export default function App() {
 
       {/* Main Content */}
       <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-8 sm:py-10">
-        {(activeLobbyCode || activeGame) && user ? (
-          <MandatoryCameraGate
+        {activeLobbyCode && user ? (
+          <LobbyRoom
+            roomCode={activeLobbyCode}
             user={user}
-            roomCode={activeLobbyCode || activeGame?.roomCode}
-            required={Boolean(activeGame) || user.role !== 'teacher'}
-            contextLabel={
-              activeGame
-                ? GAME_META[activeGame.gameType]?.title || 'Permainan'
-                : 'Ruang Tunggu Live'
-            }
-            onExit={() => {
+            onExit={() => setActiveLobbyCode(null)}
+            onUserUpdate={handleUserUpdate}
+            onSessionStarted={(sess) => {
               setActiveLobbyCode(null);
-              setActiveGame(null);
+              launchGame(sess.gameType, sess.mode, sess.code, sess.category || 'tik');
             }}
-          >
-            {activeLobbyCode ? (
-              <LobbyRoom
-                roomCode={activeLobbyCode}
+          />
+        ) : activeGame && user ? (
+          <>
+            {activeGame.gameType === 'quiz' && (
+              <QuizGame
                 user={user}
-                onExit={() => setActiveLobbyCode(null)}
-                onUserUpdate={handleUserUpdate}
-                onSessionStarted={(sess) => {
-                  setActiveLobbyCode(null);
-                  launchGame(sess.gameType, sess.mode, sess.code, sess.category || 'tik');
-                }}
+                mode={activeGame.mode}
+                category={activeGame.category || selectedCategory}
+                roomCode={activeGame.roomCode}
+                onExit={() => setActiveGame(null)}
               />
-            ) : activeGame ? (
-              <>
-                {activeGame.gameType === 'quiz' && (
-                  <QuizGame
-                    user={user}
-                    mode={activeGame.mode}
-                    category={activeGame.category || selectedCategory}
-                    roomCode={activeGame.roomCode}
-                    onExit={() => setActiveGame(null)}
-                  />
-                )}
-                {activeGame.gameType === 'flag' && (
-                  <FlagQuizGame
-                    user={user}
-                    mode={activeGame.mode}
-                    category={activeGame.category || 'umum'}
-                    roomCode={activeGame.roomCode}
-                    onExit={() => setActiveGame(null)}
-                  />
-                )}
-                {activeGame.gameType === 'clue' && (
-                  <ClueGame
-                    user={user}
-                    mode={activeGame.mode}
-                    category={activeGame.category || selectedCategory}
-                    roomCode={activeGame.roomCode}
-                    onExit={() => setActiveGame(null)}
-                  />
-                )}
-                {activeGame.gameType === 'puzzle' && (
-                  <PuzzleGame
-                    user={user}
-                    mode={activeGame.mode}
-                    roomCode={activeGame.roomCode}
-                    onExit={() => setActiveGame(null)}
-                  />
-                )}
-                {activeGame.gameType === 'racing' && (
-                  <CodeRacerGame
-                    user={user}
-                    mode={activeGame.mode}
-                    category={activeGame.category || selectedCategory}
-                    roomCode={activeGame.roomCode}
-                    onExit={() => setActiveGame(null)}
-                  />
-                )}
-                {activeGame.gameType === 'horse' && (
-                  <HorseRacingGame
-                    user={user}
-                    mode={activeGame.mode}
-                    roomCode={activeGame.roomCode}
-                    onExit={() => setActiveGame(null)}
-                  />
-                )}
-              </>
-            ) : null}
-          </MandatoryCameraGate>
+            )}
+            {activeGame.gameType === 'flag' && (
+              <FlagQuizGame
+                user={user}
+                mode={activeGame.mode}
+                category={activeGame.category || 'umum'}
+                roomCode={activeGame.roomCode}
+                onExit={() => setActiveGame(null)}
+              />
+            )}
+            {activeGame.gameType === 'clue' && (
+              <ClueGame
+                user={user}
+                mode={activeGame.mode}
+                category={activeGame.category || selectedCategory}
+                roomCode={activeGame.roomCode}
+                onExit={() => setActiveGame(null)}
+              />
+            )}
+            {activeGame.gameType === 'puzzle' && (
+              <PuzzleGame
+                user={user}
+                mode={activeGame.mode}
+                roomCode={activeGame.roomCode}
+                onExit={() => setActiveGame(null)}
+              />
+            )}
+            {activeGame.gameType === 'racing' && (
+              <CodeRacerGame
+                user={user}
+                mode={activeGame.mode}
+                category={activeGame.category || selectedCategory}
+                roomCode={activeGame.roomCode}
+                onExit={() => setActiveGame(null)}
+              />
+            )}
+            {activeGame.gameType === 'horse' && (
+              <HorseRacingGame
+                user={user}
+                mode={activeGame.mode}
+                roomCode={activeGame.roomCode}
+                onExit={() => setActiveGame(null)}
+              />
+            )}
+          </>
         ) : section === 'leaderboard' ? (
           <Leaderboard currentUser={user} />
         ) : section === 'teacher' && user?.role === 'teacher' ? (
@@ -700,7 +682,7 @@ export default function App() {
               <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
                   <p className="text-xs font-semibold text-emerald-700">
-                    Kurikulum TIK, Umum & Geografi Dunia · Wajib On Camera Real-Time
+                    Kurikulum TIK, Umum & Geografi Dunia · Main Bersama Real-Time
                   </p>
                   <h2 className="mt-1 text-2xl font-bold text-slate-900">
                     Enam Wahana Permainan & Balapan
@@ -786,8 +768,8 @@ export default function App() {
               {selectedMode === 'live' && (
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-950">
                   <p className="font-medium">
-                    <strong>Mode Kelas Bersama Aktif ({liveRoomCode.trim().toUpperCase() || 'TIK701'}):</strong>{' '}
-                    Semua 7 wahana game di bawah tersinkronisasi real-time antar HP/laptop siswa secara langsung.
+                    <strong>Mode Main Bersama Real-Time ({liveRoomCode.trim().toUpperCase() || 'TIK701'}):</strong>{' '}
+                    Semua 6 wahana game di bawah tersinkronisasi langsung antar perangkat siswa tanpa kamera.
                   </p>
                   <button
                     type="button"

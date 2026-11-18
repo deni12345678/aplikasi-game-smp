@@ -102,9 +102,6 @@ export interface LiveRaceParticipant {
   streak: number;
   statusEffect: 'normal' | 'nitro' | 'skid' | 'finished';
   finishedAt?: number;
-  cameraActive?: boolean;
-  cameraFrame?: string;
-  cameraUpdatedAt?: number;
 }
 
 export interface LeaderboardEntry {

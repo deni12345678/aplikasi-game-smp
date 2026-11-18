@@ -94,9 +94,6 @@ async function startServer() {
                     ? prev.statusEffect
                     : p.statusEffect,
                 finishedAt: prev.finishedAt ?? p.finishedAt,
-                cameraActive: p.cameraActive ?? prev.cameraActive,
-                cameraFrame: p.cameraFrame ?? prev.cameraFrame,
-                cameraUpdatedAt: p.cameraUpdatedAt ?? prev.cameraUpdatedAt,
               };
             }
             saveDatabase(db);
@@ -104,32 +101,6 @@ async function startServer() {
             broadcastToDashboard('dashboard:update', buildAnalytics(db));
           } else if (session) {
             ws.send(JSON.stringify({ event: 'room:state', payload: session }));
-          }
-        }
-
-        if (event === 'room:camera_frame' && payload?.code && payload?.studentId) {
-          const code = String(payload.code).toUpperCase();
-          const session = db.sessions.find((s) => s.code === code);
-          if (session) {
-            const frame =
-              typeof payload.cameraFrame === 'string' &&
-              payload.cameraFrame.startsWith('data:image/jpeg;base64,') &&
-              payload.cameraFrame.length <= 55_000
-                ? payload.cameraFrame
-                : undefined;
-            const idx = session.participants.findIndex((p) => p.studentId === payload.studentId);
-            if (idx !== -1) {
-              session.participants[idx] = {
-                ...session.participants[idx],
-                cameraActive: Boolean(payload.cameraActive),
-                cameraFrame: payload.cameraActive
-                  ? frame ?? session.participants[idx].cameraFrame
-                  : undefined,
-                cameraUpdatedAt: Date.now(),
-              };
-              broadcastToRoom(code, 'room:state', session);
-              broadcastToDashboard('dashboard:update', buildAnalytics(db));
-            }
           }
         }
 

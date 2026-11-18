@@ -14,7 +14,6 @@ import {
   Monitor,
   BookOpen,
   Trash2,
-  Camera,
 } from 'lucide-react';
 import { CATEGORY_LABELS, GAME_META, getGameTitle } from '../data/tikCurriculum';
 import type {
@@ -902,78 +901,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   <span className="font-mono text-emerald-400">{activeRoom.code}</span>
                 </p>
                 <p className="mt-1 text-xs text-slate-400">
-                  Begitu siswa masuk Lobby atau memainkan salah satu dari 7 game, posisi dan skor mereka
+                  Begitu siswa masuk Lobby atau memainkan salah satu dari 6 game, posisi dan skor mereka
                   akan tampil otomatis di layar proyektor ini.
                 </p>
               </div>
             ) : (
-              <div className="mt-4 space-y-5">
-                {/* Grid Kamera Real-Time Siswa */}
-                <div>
-                  <div className="mb-2.5 flex items-center justify-between text-xs">
-                    <span className="inline-flex items-center gap-1.5 font-bold text-emerald-400">
-                      <Camera className="h-4 w-4" />
-                      Pemantauan Kamera Real-Time Siswa (
-                      {sortedParticipants.filter((p) => p.cameraActive).length}/
-                      {sortedParticipants.length} On Cam)
-                    </span>
-                    <span className="text-slate-400">Diperbarui otomatis secara langsung</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                    {sortedParticipants.map((p) => {
-                      const hasCam = Boolean(p.cameraActive && p.cameraFrame);
-                      return (
-                        <div
-                          key={`cam-${p.studentId}`}
-                          className="overflow-hidden rounded-lg border border-slate-700 bg-slate-950"
-                        >
-                          <div className="relative aspect-4/3 w-full bg-slate-900">
-                            {hasCam ? (
-                              <img
-                                src={p.cameraFrame}
-                                alt={`Kamera ${p.studentName}`}
-                                className="h-full w-full object-cover"
-                              />
-                            ) : (
-                              <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-slate-400">
-                                <AvatarBadge
-                                  photo={p.avatarPhoto}
-                                  icon={p.avatarIcon}
-                                  color={p.carColor || '#047857'}
-                                  alt={p.studentName}
-                                  sizeClass="h-10 w-10"
-                                  textClass="text-lg"
-                                />
-                                <span className="text-[10px]">Menunggu Cam...</span>
-                              </div>
-                            )}
-                            <span
-                              className={`absolute top-1.5 left-1.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-bold ${
-                                p.cameraActive
-                                  ? 'bg-emerald-600 text-white'
-                                  : 'bg-slate-800 text-slate-300'
-                              }`}
-                            >
-                              {p.cameraActive ? 'ON CAM' : 'OFF'}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between gap-1 px-2.5 py-1.5 text-[11px]">
-                            <span className="truncate font-bold text-white">
-                              {p.studentName.split(' ')[0]}
-                            </span>
-                            <span className="font-mono text-emerald-400 tabular-nums">
-                              {p.progress}%
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
+              <div className="mt-4 space-y-2.5">
                 {/* Progress & Ranking Bars */}
-                <div className="space-y-2.5">
-                  {sortedParticipants.map((p, rank) => (
+                {sortedParticipants.map((p, rank) => (
                     <div
                       key={p.studentId}
                       className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/50 px-4 py-2.5"
@@ -1017,7 +952,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       </span>
                     </div>
                   ))}
-                </div>
               </div>
             )}
           </section>

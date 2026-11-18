@@ -1,5 +1,5 @@
 import React from 'react';
-import { Camera, Radio, Trophy, Users } from 'lucide-react';
+import { Radio, Trophy, Users } from 'lucide-react';
 import type { LiveRaceParticipant } from '../types';
 import { AvatarBadge } from './AvatarBadge';
 
@@ -9,6 +9,19 @@ interface LiveRoomStandingsProps {
   currentUserId: string;
   variantCode?: string;
   variant?: 'banner' | 'panel';
+}
+
+function formatStatusLabel(statusEffect: LiveRaceParticipant['statusEffect']) {
+  switch (statusEffect) {
+    case 'finished':
+      return 'Selesai';
+    case 'nitro':
+      return 'Nitro';
+    case 'skid':
+      return 'Hambatan';
+    default:
+      return 'Bermain';
+  }
 }
 
 export const LiveRoomStandings: React.FC<LiveRoomStandingsProps> = ({
@@ -24,18 +37,16 @@ export const LiveRoomStandings: React.FC<LiveRoomStandingsProps> = ({
     .slice()
     .sort((a, b) => b.score - a.score || b.progress - a.progress);
 
-  const liveCamCount = sorted.filter((p) => p.cameraActive).length;
-
   if (variant === 'banner') {
     return (
       <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-xs font-semibold text-emerald-800">
-            <Radio className="h-4 w-4 animate-pulse text-emerald-700" />
+            <Radio className="h-4 w-4 text-emerald-700" />
             <span>
-              Arena Main Bersama Live · Room{' '}
+              Arena Main Bersama Real-Time · Room{' '}
               <strong className="font-mono">{roomCode.toUpperCase()}</strong> ({peers.length}{' '}
-              peserta · {liveCamCount} on camera)
+              peserta aktif)
             </span>
           </div>
           {variantCode && (
@@ -49,7 +60,6 @@ export const LiveRoomStandings: React.FC<LiveRoomStandingsProps> = ({
           <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {sorted.slice(0, 8).map((p, idx) => {
               const isMe = p.studentId === currentUserId;
-              const hasLiveCam = Boolean(p.cameraActive && p.cameraFrame);
               return (
                 <div
                   key={p.studentId}
@@ -59,32 +69,14 @@ export const LiveRoomStandings: React.FC<LiveRoomStandingsProps> = ({
                       : 'border-emerald-100 bg-white/80'
                   }`}
                 >
-                  <div className="relative shrink-0">
-                    {hasLiveCam ? (
-                      <img
-                        src={p.cameraFrame}
-                        alt={`Kamera ${p.studentName}`}
-                        className="h-10 w-12 rounded-md border border-emerald-500 bg-slate-900 object-cover"
-                      />
-                    ) : (
-                      <AvatarBadge
-                        photo={p.avatarPhoto}
-                        icon={p.avatarIcon}
-                        color={p.carColor}
-                        alt={p.studentName}
-                        sizeClass="h-10 w-10"
-                        textClass="text-base"
-                      />
-                    )}
-                    {p.cameraActive && (
-                      <span
-                        title="Kamera Aktif Real-Time"
-                        className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-emerald-600 text-[8px] text-white ring-2 ring-white"
-                      >
-                        <Camera className="h-2 w-2" />
-                      </span>
-                    )}
-                  </div>
+                  <AvatarBadge
+                    photo={p.avatarPhoto}
+                    icon={p.avatarIcon}
+                    color={p.carColor}
+                    alt={p.studentName}
+                    sizeClass="h-9 w-9"
+                    textClass="text-base"
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-1 text-xs">
                       <span className="truncate font-bold text-slate-900">
@@ -118,17 +110,13 @@ export const LiveRoomStandings: React.FC<LiveRoomStandingsProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
         <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700">
           <Users className="h-4 w-4" />
-          <span>Papan Peringkat & Kamera Live ({roomCode.toUpperCase()})</span>
+          <span>Klasemen Main Bersama Real-Time ({roomCode.toUpperCase()})</span>
         </div>
         <div className="flex items-center gap-3 text-xs text-slate-500">
           {variantCode && (
             <span className="font-mono text-slate-600">Paket #{variantCode}</span>
           )}
-          <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
-            <Camera className="h-3.5 w-3.5" />
-            {liveCamCount}/{peers.length} On Cam
-          </span>
-          <span className="inline-flex items-center gap-1.5">
+          <span className="inline-flex items-center gap-1.5 font-mono tabular-nums">
             <Trophy className="h-3.5 w-3.5 text-amber-600" />
             {peers.length} peserta
           </span>
@@ -143,7 +131,6 @@ export const LiveRoomStandings: React.FC<LiveRoomStandingsProps> = ({
         <div className="mt-3 space-y-2.5">
           {sorted.map((p, idx) => {
             const isMe = p.studentId === currentUserId;
-            const hasLiveCam = Boolean(p.cameraActive && p.cameraFrame);
             return (
               <div
                 key={p.studentId}
@@ -158,35 +145,21 @@ export const LiveRoomStandings: React.FC<LiveRoomStandingsProps> = ({
                     <span className="font-mono text-xs font-bold text-slate-500 tabular-nums">
                       #{idx + 1}
                     </span>
-                    <div className="relative shrink-0">
-                      {hasLiveCam ? (
-                        <img
-                          src={p.cameraFrame}
-                          alt={`Kamera ${p.studentName}`}
-                          className="h-9 w-11 rounded-md border border-emerald-500 bg-slate-900 object-cover"
-                        />
-                      ) : (
-                        <AvatarBadge
-                          photo={p.avatarPhoto}
-                          icon={p.avatarIcon}
-                          color={p.carColor}
-                          alt={p.studentName}
-                          sizeClass="h-8 w-8"
-                          textClass="text-sm"
-                        />
-                      )}
-                      {p.cameraActive && (
-                        <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
-                      )}
-                    </div>
+                    <AvatarBadge
+                      photo={p.avatarPhoto}
+                      icon={p.avatarIcon}
+                      color={p.carColor}
+                      alt={p.studentName}
+                      sizeClass="h-8 w-8"
+                      textClass="text-sm"
+                    />
                     <span className="truncate">
                       {p.studentName} {isMe ? '(Kamu)' : ''} ·{' '}
                       <span className="text-xs text-slate-500">{p.className}</span>
                     </span>
                   </span>
                   <span className="shrink-0 font-mono text-xs font-bold text-emerald-700 tabular-nums">
-                    {p.score} pts · {p.progress}%
-                    {p.statusEffect === 'finished' ? ' · Selesai' : ''}
+                    {p.score} pts · {p.progress}% · {formatStatusLabel(p.statusEffect)}
                   </span>
                 </div>
                 <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-200/80">
