@@ -66,7 +66,7 @@ export const QuizGame: React.FC<QuizGameProps> = ({
   const variantCode = useMemo(() => shortVariantCode(variantSeed), [variantSeed]);
 
   const questions = useMemo(
-    () => getQuizQuestions(category, variantSeed, customQuestions, 50),
+    () => getQuizQuestions(category, variantSeed, customQuestions, 25),
     [category, variantSeed, customQuestions]
   );
 

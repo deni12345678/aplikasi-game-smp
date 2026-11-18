@@ -14,7 +14,7 @@ interface LobbyRoomProps {
   onUserUpdate?: (updated: UserAccount) => void;
 }
 
-const ALL_GAMES: GameType[] = ['quiz', 'flag', 'matching', 'clue', 'puzzle', 'racing'];
+const ALL_GAMES: GameType[] = ['quiz', 'flag', 'clue', 'puzzle', 'racing', 'horse'];
 
 export const LobbyRoom: React.FC<LobbyRoomProps> = ({
   roomCode,
@@ -411,7 +411,8 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         <div className="rounded-xl border border-slate-200 bg-white p-6 lg:col-span-8">
           <p className="text-xs font-semibold text-emerald-700">
-            Ruang Tunggu Interaktif · Game {GAME_META[session.gameType].code}: {GAME_META[session.gameType].title}
+            Ruang Tunggu Interaktif · Game {GAME_META[session.gameType]?.code || 'A'}:{' '}
+            {GAME_META[session.gameType]?.title || 'Permainan'}
           </p>
           <h1 className="mt-1 text-2xl font-bold text-slate-900">{session.title}</h1>
           <p className="mt-2 text-sm text-slate-600">
@@ -420,7 +421,9 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
           </p>
           <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-900">
             <Shuffle className="h-3.5 w-3.5 text-emerald-700" />
-            {(session.questionMode || 'varied') === 'varied'
+            {session.gameType === 'horse'
+              ? 'Balapan 3D Murni Tanpa Soal: Adu kecepatan pacu, perpindahan jalur, dan stamina secara real-time'
+              : (session.questionMode || 'varied') === 'varied'
               ? 'Mode Soal Bervariasi: Setiap siswa menerima susunan soal & opsi berbeda secara acak'
               : 'Mode Soal Seragam: Seluruh siswa mengerjakan soal dengan urutan yang sama'}
           </div>
@@ -568,7 +571,7 @@ export const LobbyRoom: React.FC<LobbyRoomProps> = ({
                 Menu Pilihan Game di Dalam Room (Main Bersama)
               </h2>
               <p className="text-xs text-slate-500">
-                Pilih salah satu dari 6 wahana game untuk dimainkan serentak oleh seluruh siswa di room ini.
+                Pilih salah satu dari 7 wahana game untuk dimainkan serentak oleh seluruh siswa di room ini.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">

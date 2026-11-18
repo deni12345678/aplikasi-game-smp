@@ -230,7 +230,7 @@ export const ClueGame: React.FC<ClueGameProps> = ({
           Kembali ke Arena
         </button>
         <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
-          <span>Game D · {CATEGORY_LABELS[category]}</span>
+          <span>Game C · {CATEGORY_LABELS[category]}</span>
           <span aria-hidden="true">·</span>
           <span className="font-mono text-xs font-semibold text-emerald-700">
             Paket #{variantCode}

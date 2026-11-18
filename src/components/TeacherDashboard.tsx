@@ -15,7 +15,7 @@ import {
   BookOpen,
   Trash2,
 } from 'lucide-react';
-import { CATEGORY_LABELS, GAME_META } from '../data/tikCurriculum';
+import { CATEGORY_LABELS, GAME_META, getGameTitle } from '../data/tikCurriculum';
 import type {
   AnalyticsSummary,
   GameSession,
@@ -296,7 +296,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         [
           `"${r.studentName.replace(/"/g, '""')}"`,
           r.className,
-          `"${GAME_META[r.gameType].title}"`,
+          `"${getGameTitle(r.gameType)}"`,
           `"${CATEGORY_LABELS[r.category || 'tik']}"`,
           r.mode,
           r.roomCode || '-',
@@ -553,10 +553,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 >
                   <option value="quiz">A. Quiz Interaktif</option>
                   <option value="flag">B. Tebak Bendera Dunia</option>
-                  <option value="matching">C. Game Balasan</option>
-                  <option value="clue">D. Tebak Clue</option>
-                  <option value="puzzle">E. Teka-Teki & Logika</option>
-                  <option value="racing">F. Code Racer 2D</option>
+                  <option value="clue">C. Tebak Clue</option>
+                  <option value="puzzle">D. Teka-Teki & Logika</option>
+                  <option value="racing">E. Code Racer 2D</option>
+                  <option value="horse">F. Pacuan Kuda 3D (Tanpa Soal)</option>
                 </select>
               </div>
               <div>
@@ -700,7 +700,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       {sess.title}
                     </p>
                     <p className="text-xs text-slate-500">
-                      {GAME_META[sess.gameType].title} ·{' '}
+                      {getGameTitle(sess.gameType)} ·{' '}
                       {CATEGORY_LABELS[sess.category || 'tik']} ·{' '}
                       {sess.mode === 'live' ? 'Live Kelas' : 'Tugas Mandiri'} ·{' '}
                       {sess.status === 'waiting'
@@ -842,7 +842,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               <div className="flex flex-wrap items-center gap-3 text-slate-300">
                 <span>
                   Game Aktif:{' '}
-                  <strong className="text-white">{GAME_META[activeRoom.gameType].title}</strong>
+                  <strong className="text-white">{getGameTitle(activeRoom.gameType)}</strong>
                 </span>
                 <span>·</span>
                 <span>
@@ -871,10 +871,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 >
                   <option value="quiz">A. Quiz Interaktif</option>
                   <option value="flag">B. Tebak Bendera Dunia</option>
-                  <option value="matching">C. Game Balasan</option>
-                  <option value="clue">D. Tebak Clue</option>
-                  <option value="puzzle">E. Teka-Teki & Logika</option>
-                  <option value="racing">F. Code Racer 2D</option>
+                  <option value="clue">C. Tebak Clue</option>
+                  <option value="puzzle">D. Teka-Teki & Logika</option>
+                  <option value="racing">E. Code Racer 2D</option>
+                  <option value="horse">F. Pacuan Kuda 3D (Tanpa Soal)</option>
                 </select>
                 <button
                   type="button"
@@ -898,7 +898,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   <span className="font-mono text-emerald-400">{activeRoom.code}</span>
                 </p>
                 <p className="mt-1 text-xs text-slate-400">
-                  Begitu siswa masuk Lobby atau memainkan salah satu dari 6 game, posisi dan skor mereka
+                  Begitu siswa masuk Lobby atau memainkan salah satu dari 7 game, posisi dan skor mereka
                   akan tampil otomatis di layar proyektor ini.
                 </p>
               </div>
@@ -986,8 +986,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-700"
                 >
                   <option value="quiz">A. Quiz Interaktif</option>
-                  <option value="racing">F. Code Racer 2D</option>
-                  <option value="clue">D. Tebak Clue</option>
+                  <option value="racing">E. Code Racer 2D</option>
+                  <option value="clue">C. Tebak Clue</option>
                 </select>
               </div>
               <div>
@@ -1209,10 +1209,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               <option value="ALL">Semua Game</option>
               <option value="quiz">A. Quiz Interaktif</option>
               <option value="flag">B. Tebak Bendera Dunia</option>
-              <option value="matching">C. Game Balasan</option>
-              <option value="clue">D. Tebak Clue</option>
-              <option value="puzzle">E. Teka-Teki & Logika</option>
-              <option value="racing">F. Code Racer 2D</option>
+              <option value="clue">C. Tebak Clue</option>
+              <option value="puzzle">D. Teka-Teki & Logika</option>
+              <option value="racing">E. Code Racer 2D</option>
+              <option value="horse">F. Pacuan Kuda 3D</option>
             </select>
             <button
               type="button"
@@ -1243,7 +1243,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 <tr key={rec.id} className="hover:bg-slate-50/60">
                   <td className="py-3 pr-4 font-medium text-slate-900">{rec.studentName}</td>
                   <td className="py-3 pr-4 text-slate-600">{rec.className}</td>
-                  <td className="py-3 pr-4 text-slate-700">{GAME_META[rec.gameType].title}</td>
+                  <td className="py-3 pr-4 text-slate-700">{getGameTitle(rec.gameType)}</td>
                   <td className="py-3 pr-4 text-xs text-slate-500">
                     {rec.mode === 'live' ? `Live (${rec.roomCode || '-'})` : 'Mandiri'}
                   </td>

@@ -5,7 +5,6 @@ import {
   CheckSquare,
   Globe2,
   HelpCircle,
-  LayoutGrid,
   Puzzle,
   Volume2,
   VolumeX,
@@ -15,7 +14,7 @@ import { AvatarBadge } from './components/AvatarBadge';
 import { ClueGame } from './components/games/ClueGame';
 import { CodeRacerGame } from './components/games/CodeRacerGame';
 import { FlagQuizGame } from './components/games/FlagQuizGame';
-import { MatchingGame } from './components/games/MatchingGame';
+import { HorseRacingGame } from './components/games/HorseRacingGame';
 import { PuzzleGame } from './components/games/PuzzleGame';
 import { QuizGame } from './components/games/QuizGame';
 import { Leaderboard } from './components/Leaderboard';
@@ -36,8 +35,9 @@ type ActiveSection = 'home' | 'arena' | 'leaderboard' | 'classroom' | 'teacher';
 
 const HERO_LAB_IMG = '/src/assets/images/hero_almumtaz_lab_1794806273145.jpg';
 const EMBLEM_IMG = '/src/assets/images/emblem_almumtaz_tik_1794806272328.jpg';
+const LOGO_DESSA_MENTARI = '/assets/aistudio/Logo_Pendidikan_Dessa_Mentari_6f1f1e2d.png';
 
-const GAME_ORDER: GameType[] = ['quiz', 'flag', 'matching', 'clue', 'puzzle', 'racing'];
+const GAME_ORDER: GameType[] = ['quiz', 'flag', 'clue', 'puzzle', 'racing', 'horse'];
 
 function renderGameIcon(type: GameType) {
   const cls = 'h-5 w-5 text-emerald-700';
@@ -46,14 +46,14 @@ function renderGameIcon(type: GameType) {
       return <CheckSquare className={cls} />;
     case 'flag':
       return <Globe2 className={cls} />;
-    case 'matching':
-      return <LayoutGrid className={cls} />;
     case 'clue':
       return <HelpCircle className={cls} />;
     case 'puzzle':
       return <Puzzle className={cls} />;
     case 'racing':
       return <CarFront className={cls} />;
+    case 'horse':
+      return <Award className={cls} />;
   }
 }
 
@@ -118,35 +118,6 @@ function renderGamePreview(type: GameType) {
                 <span className="flex-1 bg-red-600" />
               </div>
               <span className="mt-1 block text-[10px] text-slate-600">Amerika</span>
-            </div>
-          </div>
-        </div>
-      );
-    case 'matching':
-      return (
-        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
-            <span>PASANGKAN KONSEP</span>
-            <span className="font-bold text-emerald-700">DRAG / KLIK</span>
-          </div>
-          <div className="mt-2 space-y-1.5 text-[11px] font-semibold">
-            <div className="flex items-center justify-between gap-2">
-              <span className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-emerald-900">
-                CPU
-              </span>
-              <span className="h-0.5 flex-1 bg-emerald-400" />
-              <span className="rounded border border-emerald-300 bg-white px-2 py-1 text-slate-700">
-                Otak Proses
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="rounded border border-slate-200 bg-white px-2 py-1 text-slate-700">
-                RAM
-              </span>
-              <span className="h-0.5 flex-1 bg-slate-300" />
-              <span className="rounded border border-slate-200 bg-white px-2 py-1 text-slate-700">
-                Memori Kerja
-              </span>
             </div>
           </div>
         </div>
@@ -221,6 +192,32 @@ function renderGamePreview(type: GameType) {
                 <div className="h-full w-3/5 bg-amber-400" />
               </div>
               <span className="font-mono text-[10px] text-amber-300">61%</span>
+            </div>
+          </div>
+        </div>
+      );
+    case 'horse':
+      return (
+        <div className="mt-4 overflow-hidden rounded-lg border border-emerald-700/40 bg-gradient-to-b from-sky-200 via-emerald-600 to-emerald-800 p-3 text-white">
+          <div className="flex items-center justify-between text-[10px] font-mono">
+            <span className="rounded bg-slate-900/75 px-1.5 py-0.5 font-bold text-sky-200">
+              3D STADION TURF
+            </span>
+            <span className="rounded bg-amber-400 px-1.5 py-0.5 font-bold text-slate-950">
+              TANPA SOAL
+            </span>
+          </div>
+          <div className="mt-2.5 space-y-1.5 rounded bg-emerald-950/35 p-2">
+            <div className="flex items-center justify-between text-[11px] font-bold">
+              <span>🏇 Joki Merah (Kamu)</span>
+              <span className="font-mono text-amber-300">72 km/h</span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded bg-emerald-950/70">
+              <div className="h-full w-4/5 bg-gradient-to-r from-lime-400 to-amber-300" />
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-emerald-100">
+              <span>Lintasan Rumput 1.200m</span>
+              <span>Irama Pacu · Sprint</span>
             </div>
           </div>
         </div>
@@ -402,9 +399,14 @@ export default function App() {
           <button
             type="button"
             onClick={() => handleNavClick('home')}
-            className="text-left font-display text-lg font-extrabold tracking-tight text-slate-900 whitespace-nowrap shrink-0"
+            className="flex items-center gap-2.5 text-left font-display text-base font-extrabold tracking-tight text-slate-900 whitespace-nowrap shrink-0"
           >
-            Al Mumtaz TechQuest
+            <img
+              src={LOGO_DESSA_MENTARI}
+              alt="Dessa Mentari Education"
+              className="h-8 w-8 rounded-lg object-contain bg-white border border-slate-200 p-0.5"
+            />
+            <span>Dessa Mentari Education</span>
           </button>
 
           <nav className="hidden md:flex items-center gap-7 text-sm font-medium text-slate-600">
@@ -524,14 +526,6 @@ export default function App() {
                 onExit={() => setActiveGame(null)}
               />
             )}
-            {activeGame.gameType === 'matching' && (
-              <MatchingGame
-                user={user}
-                mode={activeGame.mode}
-                roomCode={activeGame.roomCode}
-                onExit={() => setActiveGame(null)}
-              />
-            )}
             {activeGame.gameType === 'clue' && (
               <ClueGame
                 user={user}
@@ -554,6 +548,14 @@ export default function App() {
                 user={user}
                 mode={activeGame.mode}
                 category={activeGame.category || selectedCategory}
+                roomCode={activeGame.roomCode}
+                onExit={() => setActiveGame(null)}
+              />
+            )}
+            {activeGame.gameType === 'horse' && (
+              <HorseRacingGame
+                user={user}
+                mode={activeGame.mode}
                 roomCode={activeGame.roomCode}
                 onExit={() => setActiveGame(null)}
               />
@@ -583,10 +585,10 @@ export default function App() {
                     <h1 className="mt-3 text-balance text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
                       Belajar Teknologi dengan Cerdas, Kompetitif, dan Beradab Islami
                     </h1>
-                    <p className="mt-4 text-base leading-relaxed text-slate-600">
+                      <p className="mt-4 text-base leading-relaxed text-slate-600">
                       Platform game pembelajaran interaktif khusus siswa kelas VII–IX SMP IT Al
                       Mumtaz YPII. Kuasai perangkat keras, keamanan siber, logika pemrograman, dan
-                      etika tabayyun digital melalui lima permainan edukatif terintegrasi.
+                      etika tabayyun digital melalui enam wahana permainan edukatif & ketangkasan terintegrasi.
                     </p>
 
                     <div className="mt-7 flex flex-wrap items-center gap-3">
@@ -607,21 +609,18 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-900 lg:col-span-6">
-                    {!heroImgFailed ? (
-                      <img
-                        src={HERO_LAB_IMG}
-                        alt="Laboratorium Komputer dan Studio Pembelajaran Digital SMP IT Al Mumtaz YPII"
-                        referrerPolicy="no-referrer"
-                        onError={() => setHeroImgFailed(true)}
-                        className="h-72 w-full object-cover lg:h-full"
-                      />
-                    ) : (
-                      <div className="flex h-72 w-full flex-col items-center justify-center bg-gradient-to-br from-emerald-900 to-slate-900 p-8 text-center text-white lg:h-full">
-                        <Award className="h-10 w-10 text-amber-400" />
-                        <p className="mt-3 text-lg font-bold">Lab TIK SMP IT Al Mumtaz YPII</p>
-                      </div>
-                    )}
+                  <div className="flex flex-col items-center justify-center rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-sky-50 p-8 lg:col-span-6 lg:p-12 text-center shadow-xs">
+                    <img
+                      src={LOGO_DESSA_MENTARI}
+                      alt="Dessa Mentari Education Logo"
+                      className="h-44 w-44 object-contain rounded-2xl shadow-md bg-white p-3 border border-amber-300"
+                    />
+                    <h2 className="mt-4 font-display text-2xl font-extrabold text-slate-900">
+                      Dessa Mentari Education
+                    </h2>
+                    <p className="mt-1 text-sm font-semibold text-emerald-700">
+                      Tempat Belajar Terpercaya · Platform Pembelajaran Interaktif
+                    </p>
                   </div>
                 </div>
 
@@ -663,7 +662,7 @@ export default function App() {
                     Kurikulum TIK, Umum & Geografi Dunia
                   </p>
                   <h2 className="mt-1 text-2xl font-bold text-slate-900">
-                    Enam Wahana Permainan Edukatif
+                    Enam Wahana Permainan & Balapan
                   </h2>
                 </div>
 
@@ -747,7 +746,7 @@ export default function App() {
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-950">
                   <p className="font-medium">
                     <strong>Mode Kelas Bersama Aktif ({liveRoomCode.trim().toUpperCase() || 'TIK701'}):</strong>{' '}
-                    Semua 6 game di bawah tersinkronisasi real-time antar HP/laptop siswa dengan paket soal acak berbeda per peserta.
+                    Semua 7 wahana game di bawah tersinkronisasi real-time antar HP/laptop siswa secara langsung.
                   </p>
                   <button
                     type="button"
@@ -811,24 +810,16 @@ export default function App() {
                 {/* Card 6: Institutional Context & Quick Access to Classroom / Teacher */}
                 <article className="flex flex-col justify-between rounded-xl border border-slate-200 bg-slate-900 p-6 text-white">
                   <div className="flex items-start gap-4">
-                    {!emblemImgFailed ? (
-                      <img
-                        src={EMBLEM_IMG}
-                        alt="Emblem TIK SMP IT Al Mumtaz YPII"
-                        referrerPolicy="no-referrer"
-                        onError={() => setEmblemImgFailed(true)}
-                        className="h-14 w-14 shrink-0 rounded-lg object-cover bg-white"
-                      />
-                    ) : (
-                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-emerald-800">
-                        <Award className="h-7 w-7 text-amber-400" />
-                      </div>
-                    )}
+                    <img
+                      src={LOGO_DESSA_MENTARI}
+                      alt="Dessa Mentari Education"
+                      className="h-14 w-14 shrink-0 rounded-lg object-contain bg-white p-1"
+                    />
                     <div>
                       <p className="text-xs font-semibold text-amber-400">
-                        SMP IT Al Mumtaz YPII
+                        Dessa Mentari Education
                       </p>
-                      <h3 className="mt-1 text-lg font-bold">Ruang Kelas & Dasbor Guru</h3>
+                      <h3 className="mt-1 text-lg font-bold">Ruang Kelas & Dasbor Pengajar</h3>
                     </div>
                   </div>
 

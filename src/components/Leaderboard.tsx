@@ -117,8 +117,8 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
             10 Siswa dengan Total Skor Tertinggi
           </h2>
           <p className="mt-1 text-sm text-slate-600">
-            Total poin dihitung otomatis dari seluruh sesi Quiz Interaktif, Tebak Bendera, Game
-            Balasan, Tebak Clue, Teka-Teki, dan Code Racer 2D.
+            Total poin dihitung otomatis dari seluruh sesi Quiz Interaktif, Tebak Bendera, Tebak
+            Clue, Teka-Teki, Code Racer 2D, dan Pacuan Kuda 3D.
           </p>
         </div>
 

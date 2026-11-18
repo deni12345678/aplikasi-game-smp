@@ -2,7 +2,7 @@ export type UserRole = 'student' | 'teacher';
 
 export type ClassRoom = 'VII-A' | 'VII-B' | 'VIII-A' | 'VIII-B' | 'IX-A' | 'IX-B' | 'Guru';
 
-export type GameType = 'quiz' | 'flag' | 'matching' | 'clue' | 'puzzle' | 'racing';
+export type GameType = 'quiz' | 'flag' | 'clue' | 'puzzle' | 'racing' | 'horse';
 
 export type SessionMode = 'live' | 'homework';
 
@@ -178,6 +178,8 @@ export interface CrosswordWord {
   row: number;
   col: number;
   clue: string;
+  difficulty?: 'mudah' | 'sedang' | 'sulit';
+  topic?: string;
 }
 
 export interface AlgorithmChallenge {

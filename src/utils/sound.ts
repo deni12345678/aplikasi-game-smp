@@ -57,6 +57,30 @@ export const soundFx = {
     playTone(587.33, 0.12, 'triangle', 0.07, 0.06);
     playTone(880, 0.2, 'sine', 0.08, 0.12);
   },
+  pop(chordIndex = 0) {
+    const ctx = getCtx();
+    if (!ctx) return;
+    const delay = chordIndex * 0.06;
+    const now = ctx.currentTime + delay;
+    const pitchBoost = Math.pow(1.12, Math.min(chordIndex, 4));
+
+    // Tactile rising bubble-pop fundamental
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(340 * pitchBoost, now);
+    osc.frequency.exponentialRampToValueAtTime(920 * pitchBoost, now + 0.065);
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.14, now + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.13);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.14);
+
+    // Crisp sparkle overtone
+    playTone(1318.5 * pitchBoost, 0.11, 'triangle', 0.045, delay + 0.025);
+  },
   victory() {
     playTone(523.25, 0.12, 'sine', 0.08, 0);
     playTone(659.25, 0.12, 'sine', 0.08, 0.1);

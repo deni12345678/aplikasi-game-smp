@@ -645,7 +645,7 @@ export const CodeRacerGame: React.FC<CodeRacerGameProps> = ({
         </button>
 
         <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600">
-          <span>Game F · Code Racer 2D · {CATEGORY_LABELS[category]}</span>
+          <span>Game E · Code Racer 2D · {CATEGORY_LABELS[category]}</span>
           <span aria-hidden="true">·</span>
           <span className="font-mono text-xs font-semibold text-emerald-700">
             Paket #{variantCode}

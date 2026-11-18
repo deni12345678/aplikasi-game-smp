@@ -11,7 +11,7 @@ import {
   Trash2,
   User,
 } from 'lucide-react';
-import { AVATAR_CHOICES, CATEGORY_LABELS, computeStudentBadges, GAME_META } from '../data/tikCurriculum';
+import { AVATAR_CHOICES, CATEGORY_LABELS, computeStudentBadges, GAME_META, getGameTitle } from '../data/tikCurriculum';
 import type {
   GameSession,
   GameType,
@@ -239,10 +239,10 @@ export const StudentHub: React.FC<StudentHubProps> = ({
             >
               <option value="quiz">A. Quiz Interaktif</option>
               <option value="flag">B. Tebak Bendera Dunia</option>
-              <option value="matching">C. Game Balasan (Matching)</option>
-              <option value="clue">D. Game Tebak Clue</option>
-              <option value="puzzle">E. Teka-Teki & Logika</option>
-              <option value="racing">F. Code Racer 2D</option>
+              <option value="clue">C. Game Tebak Clue</option>
+              <option value="puzzle">D. Teka-Teki & Logika</option>
+              <option value="racing">E. Code Racer 2D</option>
+              <option value="horse">F. Pacuan Kuda 3D (Tanpa Soal)</option>
             </select>
             <select
               value={quickCategory}
@@ -467,7 +467,7 @@ export const StudentHub: React.FC<StudentHubProps> = ({
                   · {CATEGORY_LABELS[sess.category || 'tik']} · {sess.participants.length} peserta
                 </p>
                 <p className="mt-1 text-sm font-bold text-slate-900">{sess.title}</p>
-                <p className="mt-0.5 text-xs text-slate-600">{GAME_META[sess.gameType].title}</p>
+                <p className="mt-0.5 text-xs text-slate-600">{getGameTitle(sess.gameType)}</p>
               </div>
               <div className="flex items-center gap-2">
                 {onEnterLobby && (sess.status === 'waiting' || user.role === 'teacher') && (
@@ -522,7 +522,7 @@ export const StudentHub: React.FC<StudentHubProps> = ({
                 {myScores.map((sc) => (
                   <tr key={sc.id}>
                     <td className="py-2.5 pr-4 font-medium text-slate-900">
-                      {GAME_META[sc.gameType].title}
+                      {getGameTitle(sc.gameType)}
                     </td>
                     <td className="py-2.5 pr-4 text-xs text-slate-500">
                       {sc.mode === 'live' ? `Live (${sc.roomCode || '-'})` : 'Mandiri'}
