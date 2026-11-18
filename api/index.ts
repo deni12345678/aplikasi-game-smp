@@ -1,4 +1,4 @@
-import { createAppRuntime } from '../server/app';
+import { createAppRuntime } from '../server/app.js';
 
 const { app } = createAppRuntime();
 
